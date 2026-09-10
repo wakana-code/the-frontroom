@@ -682,7 +682,7 @@ function makeBook(title,subtitle,color,w,d,h,index){
   });
   return g;
 }
-makeBook('光と素材','LIGHT & MATERIAL','#405860',.44,.61,.064,0);
+makeBook('魔法のお城','MAGIC CASTLE','#405860',.44,.61,.064,0);
 makeBook('静かな部屋','LIVING / VOL. 08','#936957',.42,.58,.061,1);
 makeBook('余白の記録','A SMALL COLLECTION','#7c8065',.40,.55,.056,2);
 
@@ -1085,23 +1085,37 @@ function createPouch(parent,interactive=false){
 
   if(interactive){
     actionable(latch,'留め金を外す',()=>{
-      if(pouchOpen){toast('ポーチは開いている。中のスターをクリックしよう。');return;}
+      if(pouchOpen){
+        toast(activeRoomIndex===0 && !found
+          ? 'ポーチは開いている。中のスターをクリックしよう。'
+          : '開いたポーチの中には、何も入っていない。');
+        return;
+      }
       pouchOpen=true;
+      pouchOpenedByRoom.set(activeRoomIndex,true);
       animateTo(clasp.rotation,{x:-.8},.22);
       animateTo(flap.rotation,{x:-2.12},1.15);
-      star.visible=true;
-      animateTo(star.position,{y:.86,z:.04},1.35);
-      animateTo(star.rotation,{y:.24,z:-.08},1.2);
-      toast('留め金が外れた。中から、透明なスターが現れる。',3800);
+
+      const containsStar=activeRoomIndex===0 && !found;
+      star.visible=containsStar;
+      if(containsStar){
+        animateTo(star.position,{y:.86,z:.04},1.35);
+        animateTo(star.rotation,{y:.24,z:-.08},1.2);
+        toast('留め金が外れた。中から、透明なスターが現れる。',3800);
+      }else{
+        toast('留め金が外れた。ポーチの中は、空っぽだった。',3300);
+      }
     });
     actionable(star,'アクリルのスターを手に取る',()=>{
-      if(found)return;
+      if(found || activeRoomIndex!==0)return;
       found=true;
-      $('#objective').textContent='✓ アクリルのスターを見つけた。';
+      star.visible=false;
+      worldPouch.star.visible=false;
+      $('#objective').textContent='✓ 最初の部屋のアクリルのスターを持っている。';
       $('#win').style.display='grid';
     });
   }
-  return {root,flap,star};
+  return {root,flap,star,clasp};
 }
 
 const worldPouch=createPouch(scene,false);
@@ -1141,8 +1155,11 @@ function enterInspect(){
   inspectPivot.rotation.set(0,0,0);
   inspectCamera.position.set(0,.54,2.4);
   inspectCamera.lookAt(0,.43,0);
-  toast(pouchOpen?'ポーチは開いている。スターの縁を光にかざしてみよう。':
-    '茶色い革のポーチ。正面の金色の留め金を外せそうだ。',4200);
+  toast(pouchOpen
+    ? (activeRoomIndex===0 && !found
+      ? 'ポーチは開いている。中のスターを手に取れそうだ。'
+      : '茶色いポーチ。開いた中身は空っぽだ。')
+    : '茶色い革のポーチ。正面の金色の留め金を外せそうだ。',4200);
 }
 function exitInspect(){
   mode='room';
@@ -1150,7 +1167,7 @@ function exitInspect(){
   $('#help').textContent='WASD：移動 ／ ドラッグ：見回す ／ クリック：調べる ／ 下：視点移動';
   if(pouchOpen){
     worldPouch.flap.rotation.x=-2.12;
-    worldPouch.star.visible=!found;
+    worldPouch.star.visible=activeRoomIndex===0 && !found;
     worldPouch.star.position.y=.83;
   }
 }
@@ -1191,7 +1208,8 @@ const anomalyNames={
   normal:'異変のない部屋',
   rain:'雨の降る部屋',
   floating:'椅子の浮く部屋',
-  yellow:'黄色い部屋'
+  yellow:'黄色い部屋',
+  special:'ぼくのゆめ'
 };
 
 // 壁紙と床の元マテリアルは保管し、異変解除時に戻す。
@@ -1386,12 +1404,21 @@ const floatingChairBase=new THREE.Vector3();
 
 function chooseRoomAnomaly(index){
   if(index===0)return 'normal';
+  if(index===SPECIAL_ROOM_INDEX)return 'special';
   const rng=roomRandom(index+971);
   if(rng()>=ANOMALY_CHANCE)return 'normal';
   return ['rain','floating','yellow'][Math.floor(rng()*3)];
 }
 
 function resetAnomalyBeforeLayout(){
+  specialRoomRoot.visible=false;
+  for(const root of [deskLayoutRoot,wardrobeLayoutRoot,bedLayoutRoot]){
+    root.visible=true;
+  }
+  for(const surface of specialWhiteSurfaces){
+    surface.object.material=surface.original;
+  }
+
   for(let i=tweens.length-1;i>=0;i--){
     if(tweens[i].obj===chair.position || tweens[i].obj===chair.rotation){
       tweens.splice(i,1);
@@ -1439,9 +1466,25 @@ function activateRoomAnomaly(index){
     rainRoomRoot.visible=true;
     rainSurfacesDirty=true;
   }
+
+  if(activeAnomaly==='special'){
+    for(const root of [deskLayoutRoot,wardrobeLayoutRoot,bedLayoutRoot]){
+      root.visible=false;
+    }
+    for(const surface of specialWhiteSurfaces){
+      surface.object.material=surface.floor
+        ? dreamFloorMaterial : dreamWallMaterial;
+    }
+    specialRoomRoot.visible=true;
+  }
+
+  syncRoomPouch();
 }
 
 function updateRoomAnomaly(dt){
+  for(const extraSwitch of dreamSwitches){
+    extraSwitch.rocker.rotation.x=rocker.rotation.x;
+  }
   if(activeAnomaly==='floating'){
     chair.position.copy(floatingChairBase);
     chair.position.y+=Math.sin(time*.79)*.085+
@@ -1530,9 +1573,312 @@ function updateRoomAnomaly(dt){
   waterReflection.material.uniforms.waterTime.value=time;
 }
 
-const ROOM_COUNT=8;
+// 全12室。特殊な部屋は08〜12号室のどれかひとつ。
+// 抽選は起動時だけなので、同じプレイ中は場所が変わらない。
+const ROOM_COUNT=12;
+const SPECIAL_ROOM_INDEX=7+Math.floor(Math.random()*5);
 let activeRoomIndex=0;
 let corridorRoomIndex=0;
+
+// ポーチの開閉状態は部屋ごとに記憶する。
+// 星が入っているのは、最初の部屋だけ。
+const pouchOpenedByRoom=new Map();
+
+function syncRoomPouch(){
+  pouchOpen=pouchOpenedByRoom.get(activeRoomIndex)===true;
+  for(const pouch of [worldPouch,inspected]){
+    const animatedObjects=[
+      pouch.flap.rotation,pouch.clasp.rotation,
+      pouch.star.position,pouch.star.rotation
+    ];
+    for(let i=tweens.length-1;i>=0;i--){
+      if(animatedObjects.includes(tweens[i].obj)){
+        tweens.splice(i,1);
+      }
+    }
+    pouch.flap.rotation.x=pouchOpen?-2.12:0;
+    pouch.clasp.rotation.x=pouchOpen?-.8:0;
+    pouch.star.visible=pouchOpen && activeRoomIndex===0 && !found;
+    pouch.star.position.set(0,pouchOpen?.86:.34,pouchOpen?.04:0);
+    pouch.star.rotation.set(0,pouchOpen?.24:0,pouchOpen?-.08:0);
+  }
+}
+
+// 特殊な部屋。
+const specialRoomRoot=group();
+specialRoomRoot.visible=false;
+const dreamSwitches=[];
+const dreamWallMaterial=material('#ffffff',.96);
+const dreamFloorMaterial=material('#ffffff',.63);
+const specialWhiteSurfaces=roomSurfaces.map(surface=>({...surface}));
+
+// 天井と巾木も真っ白にする。廊下は変更しない。
+for(const object of scene.children){
+  if(!object.isMesh ||
+     specialWhiteSurfaces.some(surface=>surface.object===object))continue;
+  const params=object.geometry.parameters;
+  const isCeiling=params &&
+    params.width===8 && params.height===.12 && params.depth===8;
+  const isRoomTrim=object.material===trim && object.position.y<.2;
+  if(isCeiling || isRoomTrim){
+    specialWhiteSurfaces.push({
+      object,original:object.material,floor:false
+    });
+  }
+}
+
+let dreamSeed=817239;
+function dreamRandom(){
+  dreamSeed=(Math.imul(dreamSeed,1664525)+1013904223)>>>0;
+  return dreamSeed/4294967296;
+}
+
+// インストール済みの日本語フォントの字形を土台にしながら、
+// 一文字ずつ傾け、輪郭を何度もずらしてなぞって落書きにする。
+// 外部フォントは不要。
+const dreamWords=['そと','あめ','おもちゃやさん','まほう','もぐる','ぼくのゆめ'];
+const graffitiTexture=canvasTexture((ctx,size)=>{
+  ctx.clearRect(0,0,size,size);
+  const lines=[
+    {word:'そと',x:120,y:450,font:265,angle:-.075},
+    {word:'あめ',x:1110,y:380,font:185,angle:.12},
+    {word:'おもちゃやさん',x:90,y:925,font:245,angle:-.035},
+    {word:'まほう',x:160,y:1400,font:315,angle:.055},
+    {word:'もぐる',x:1160,y:1390,font:207,angle:-.12},
+    {word:'ぼくのゆめ',x:140,y:1840,font:290,angle:-.025}
+  ];
+  for(const line of lines){
+    ctx.save();
+    ctx.translate(line.x,line.y);
+    ctx.rotate(line.angle);
+    let penX=0;
+    for(const character of line.word){
+      ctx.save();
+      ctx.translate(penX,(dreamRandom()-.5)*34);
+      ctx.rotate((dreamRandom()-.5)*.20);
+      ctx.scale(.91+dreamRandom()*.14,.86+dreamRandom()*.22);
+      ctx.font=`${line.font}px "Klee One","Yu Kyokasho","Hiragino Maru Gothic ProN","Yu Gothic",sans-serif`;
+      ctx.lineJoin='round';
+      ctx.fillStyle='rgba(38,35,42,.66)';
+      ctx.fillText(character,0,0);
+      for(let pass=0;pass<9;pass++){
+        ctx.lineWidth=.9+dreamRandom()*2.6;
+        ctx.strokeStyle=`rgba(24,21,29,${.11+dreamRandom()*.15})`;
+        ctx.strokeText(character,
+          (dreamRandom()-.5)*9,
+          (dreamRandom()-.5)*8
+        );
+      }
+      ctx.restore();
+      penX+=line.font*(.89+dreamRandom()*.085);
+    }
+    // 書き直しや、指先で引きずったような短い線。
+    for(let i=0;i<10;i++){
+      const x=dreamRandom()*penX;
+      const y=-line.font*.30+dreamRandom()*line.font*.52;
+      ctx.strokeStyle='rgba(31,27,34,.18)';
+      ctx.lineWidth=1+dreamRandom()*3;
+      ctx.beginPath();
+      ctx.moveTo(x,y);
+      ctx.lineTo(x+8+dreamRandom()*23,y-5+dreamRandom()*12);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+},2048);
+
+const graffiti=mesh(new THREE.PlaneGeometry(7.55,2.89),
+  material('#ffffff',.98,0,{
+    map:graffitiTexture,transparent:true,depthWrite:false
+  }),specialRoomRoot,0,1.64,-3.975);
+graffiti.castShadow=false;
+
+// 家具の色・形はそのまま複製し、操作だけを外す。
+// ランプの光源などは複製しない。
+const dreamFurnitureColliders=[];
+function dreamFurniture(source,position,rotation,scale){
+  const pivot=group(specialRoomRoot);
+  const copy=source.clone(true);
+  copy.position.set(0,0,0);
+  copy.rotation.set(0,0,0);
+  copy.scale.set(1,1,1);
+
+  const unwanted=[];
+  copy.traverse(object=>{
+    object.userData={};
+    if(object.isLight)unwanted.push(object);
+  });
+  for(const object of unwanted)object.removeFromParent();
+
+  pivot.add(copy);
+  copy.updateWorldMatrix(true,true);
+  const bounds=new THREE.Box3().setFromObject(copy);
+  const center=bounds.getCenter(new THREE.Vector3());
+  copy.position.sub(center);
+
+  pivot.position.fromArray(position);
+  pivot.rotation.set(...rotation);
+  pivot.scale.setScalar(scale);
+  dreamFurnitureColliders.push(pivot);
+  return pivot;
+}
+
+// 落書きのある北壁は空け、左右・入口側の壁から家具が突き出す。
+// 大きさ・傾き・高さを揃えず、天井にも追加する。
+// 下端は歩行の邪魔になりにくい高さに保つ。
+const wallDreamFurniture=[
+  [bed,[-3.61,2.27,-2.05],[.12,.12,-1.12],.45],
+  [wardrobe,[-3.64,2.33,.12],[.16,.25,-.94],.46],
+  [desk,[-3.65,2.32,2.23],[-.29,-.22,-1.06],.47],
+
+  [desk,[3.66,2.39,-2.35],[.30,.19,1.07],.48],
+  [bed,[3.63,2.36,-.45],[-.16,-.13,1.13],.43],
+  [wardrobe,[3.70,2.76,1.32],[.23,-.12,.95],.31],
+
+  [wardrobe,[-2.32,2.36,3.64],[1.03,.18,.16],.45],
+  [desk,[-.25,2.39,3.65],[1.12,-.20,-.18],.49],
+  [bed,[1.72,2.39,3.64],[1.17,.25,.11],.43],
+
+  [bed,[-1.70,3.03,-.95],[.14,.48,Math.PI],.40],
+  [wardrobe,[.94,3.03,-1.48],[Math.PI,.21,.23],.36],
+  [desk,[.32,3.03,1.21],[2.85,-.39,.20],.44]
+];
+for(const [source,position,rotation,scale] of wallDreamFurniture){
+  dreamFurniture(source,position,rotation,scale);
+}
+
+// 床の書類。ひとつずつ少し回転・色・高さを変えて重ねる。
+const dreamPaperTextures=[];
+for(let variant=0;variant<3;variant++){
+  dreamPaperTextures.push(canvasTexture((ctx,size)=>{
+    ctx.fillStyle=['#faf9f5','#eeede5','#fffefa'][variant];
+    ctx.fillRect(0,0,size,size);
+    ctx.fillStyle='#343339';
+    ctx.font='16px "Yu Gothic",sans-serif';
+    const printed='そと あめ おもちゃやさん まほう もぐる ぼくのゆめ';
+    const lines=wrapText(ctx,printed.repeat(30),size-62);
+    lines.slice(0,21).forEach((line,i)=>{
+      ctx.fillText(line,31,36+i*22);
+    });
+    ctx.fillStyle='#77777b';
+    ctx.font='10px monospace';
+    ctx.fillText(String(variant+1).padStart(2,'0'),size-48,size-18);
+  },512));
+}
+const dreamPaperMaterials=dreamPaperTextures.map(texture=>
+  material('#ffffff',.98,0,{map:texture,side:THREE.DoubleSide})
+);
+const dreamPaperGeometry=new THREE.PlaneGeometry(.49,.69);
+
+function addDreamPaper(x,z,index){
+  const sheet=mesh(
+    dreamPaperGeometry,
+    dreamPaperMaterials[index%3],
+    specialRoomRoot,x,.012+index*.00019,z
+  );
+  sheet.rotation.set(-Math.PI/2,0,(dreamRandom()-.5)*Math.PI);
+  sheet.castShadow=false;
+  actionable(sheet,'床に散らばった紙を読む',()=>{
+    toast('「そと あめ おもちゃやさん まほう もぐる ぼくのゆめ」――同じ言葉だけが、繰り返し印刷されている。',5500);
+  });
+}
+
+for(let i=0;i<175;i++){
+  // 入口付近は少し少なめにし、それ以外は床一面に散らす。
+  let x=(dreamRandom()-.5)*6.85;
+  let z=(dreamRandom()-.5)*6.85;
+  if(x>2.8 && z>1.85)x-=1.3;
+  addDreamPaper(x,z,i);
+}
+// 円形アクリルの下には、確実に書類の山を作る。
+for(let i=0;i<22;i++){
+  addDreamPaper(
+    -3.12+(dreamRandom()-.5)*.63,
+    -3.03+(dreamRandom()-.5)*.63,
+    175+i
+  );
+}
+
+// 複数のスイッチ。どれも、同じ部屋の主照明につながっている。
+function addDreamSwitch(position,rotation){
+  const copy=switchGroup.clone(true);
+  copy.traverse(object=>{object.userData={};});
+  copy.position.fromArray(position);
+  copy.rotation.set(...rotation);
+  specialRoomRoot.add(copy);
+
+  const clonedRocker=copy.children[1];
+  dreamSwitches.push({root:copy,rocker:clonedRocker});
+  actionable(copy,'照明スイッチ：ON / OFF',switchGroup.userData.action);
+}
+addDreamSwitch([-3.965,.58,-2.92],[0,Math.PI/2,.09]);
+addDreamSwitch([-3.965,1.41,-.65],[0,Math.PI/2,-.16]);
+addDreamSwitch([-3.965,2.72,1.63],[0,Math.PI/2,.22]);
+addDreamSwitch([3.965,.51,-1.83],[0,-Math.PI/2,-.11]);
+addDreamSwitch([3.965,1.44,.05],[0,-Math.PI/2,.13]);
+addDreamSwitch([-1.49,1.06,3.965],[0,Math.PI,-.18]);
+addDreamSwitch([1.19,.39,3.965],[0,Math.PI,.16]);
+addDreamSwitch([.72,3.239,.06],[Math.PI/2,0,.31]);
+
+// 星形の穴を持つ円形アクリル。
+// 最初の星：半径.285 × ポーチ内スケール.77 × 実室スケール.60。
+// 穴の輪郭には、この実寸と同じ値を使う。
+const acrylicHoleScale=.77*.60;
+const diskShape=new THREE.Shape();
+diskShape.absarc(0,0,.305,0,TAU,false);
+
+const starCutout=new THREE.Path();
+for(let i=0;i<10;i++){
+  const angle=Math.PI/2-i*Math.PI/5;
+  const radius=(i%2?.127:.285)*acrylicHoleScale;
+  const x=Math.cos(angle)*radius;
+  const y=Math.sin(angle)*radius;
+  if(i===0)starCutout.moveTo(x,y);
+  else starCutout.lineTo(x,y);
+}
+starCutout.closePath();
+diskShape.holes.push(starCutout);
+
+const diskThickness=.058*acrylicHoleScale;
+const diskGeometry=new THREE.ExtrudeGeometry(diskShape,{
+  depth:diskThickness,
+  bevelEnabled:true,
+  bevelSize:.007*acrylicHoleScale,
+  bevelThickness:.009*acrylicHoleScale,
+  bevelSegments:4,
+  curveSegments:80
+});
+diskGeometry.translate(0,0,-diskThickness/2);
+const diskMaterial=new THREE.MeshPhysicalMaterial({
+  color:'#d7f0ec',
+  roughness:.07,
+  metalness:0,
+  transmission:.96,
+  thickness:diskThickness,
+  ior:1.49,
+  attenuationColor:'#91d8ce',
+  attenuationDistance:.8,
+  clearcoat:1,
+  clearcoatRoughness:.06,
+  envMapIntensity:1.65
+});
+const dreamDisk=mesh(diskGeometry,diskMaterial,
+  specialRoomRoot,-3.12,.075,-3.03);
+dreamDisk.rotation.set(-Math.PI/2,0,.23);
+const diskEdges=new THREE.LineSegments(
+  new THREE.EdgesGeometry(diskGeometry,32),
+  new THREE.LineBasicMaterial({
+    color:'#e5ffff',transparent:true,opacity:.23
+  })
+);
+dreamDisk.add(diskEdges);
+
+actionable(dreamDisk,'星形の穴があいた円形アクリルを調べる',()=>{
+  toast(found
+    ? '中央の星形の穴は、最初の部屋で拾ったスターと同じ大きさだ。穴の向こうに、紙の文字が見える。'
+    : '透明な丸いアクリル板。中央が星形にくり抜かれている。何かが、ここにぴったり収まりそうだ。',
+    5500);
+});
 
 function roomRandom(index){
   let s=(0x9e3779b9 ^ Math.imul(index+1,2654435761))>>>0;
@@ -1628,6 +1974,12 @@ const views={
 };
 
 function transformedView(name){
+  if(activeAnomaly==='special' && name==='room'){
+    return {
+      p:[1.8,1.64,2.4],
+      t:[0,1.45,-3.8]
+    };
+  }
   const source=views[name];
   const root=name==='desk'?deskLayoutRoot:
     name==='closet'?wardrobeLayoutRoot:
@@ -1651,6 +2003,10 @@ function applyLook(){
 function gotoView(name,instant=false){
   if(mode==='corridor'){
     toast('廊下ではWASDで移動。ドアから部屋へ入ると、家具の視点ボタンを使える。');
+    return;
+  }
+  if(activeAnomaly==='special' && name!=='room' && name!=='switch'){
+    toast('この部屋では家具が壁や天井から生えている。WASDで歩いて調べよう。');
     return;
   }
   currentView=name;
@@ -1728,6 +2084,24 @@ function canWalkAt(x,z,eyeY){
   if(z < -3.96+playerRadius || z > 3.96-playerRadius ||
      x < -3.96+playerRadius)return false;
   if(x>3.96-playerRadius && !doorway)return false;
+
+  if(activeAnomaly==='special'){
+    // 通常の家具セットは非表示なので、その当たり判定も使わない。
+    // 壁・天井の家具には、現在の高さに応じて判定する。
+    if(collidesWithDoorPanel(roomDoorPanel,x,z,eyeY))return false;
+
+    specialRoomRoot.updateWorldMatrix(true,true);
+    const headY=eyeY+.08;
+    for(const furniture of dreamFurnitureColliders){
+      const bounds=new THREE.Box3().setFromObject(furniture);
+      if(bounds.min.y>=headY || bounds.max.y<=.08)continue;
+      if(circleIntersectsBox(x,z,{
+        minX:bounds.min.x,maxX:bounds.max.x,
+        minZ:bounds.min.z,maxZ:bounds.max.z
+      }))return false;
+    }
+    return true;
+  }
 
   const headY=eyeY+.09;
   function bundleCollision(root,rectangles){
@@ -2123,7 +2497,9 @@ function canWalkCorridor(x,z,eyeY){
 function setAreaHUD(){
   $('#hud h1').textContent=mode==='corridor'
     ? '折り返す廊下'
-    : `夕暮れの部屋 ${String(activeRoomIndex+1).padStart(2,'0')}`;
+    : activeAnomaly==='special'
+      ? 'ぼくのゆめ'
+      : `夕暮れの部屋 ${String(activeRoomIndex+1).padStart(2,'0')}`;
   $('#help').textContent=mode==='corridor'
     ? 'WASD：移動 ／ ドラッグ：見回す ／ ドアをクリックして入室'
     : 'WASD：移動 ／ ドラッグ：見回す ／ クリック：調べる ／ 下：視点移動';
@@ -2186,7 +2562,8 @@ function updateAreaCrossing(){
         : '同じ部屋なのに、家具の場所が少し違う。',
       rain:'天井の内側から雨が降っている。足元には、薄く水が溜まっている。',
       floating:'部屋の中央で、椅子が静かに浮いている。',
-      yellow:'壁も床も、淡く鮮やかな黄色に変わっている。'
+      yellow:'壁も床も、淡く鮮やかな黄色に変わっている。',
+      special:'真っ白な部屋。乱れた文字と、壁から生えた家具。足元では、同じ言葉が何度も繰り返されている。'
     };
     toast(`部屋 ${roomNumber}。${descriptions[activeAnomaly]}`,4200);
   }
