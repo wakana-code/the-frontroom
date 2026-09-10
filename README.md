@@ -1,4 +1,4 @@
-# The-Frontroom
+# The-Frontrooms
 [こちらのリンクから遊べます](https://wakana-code.github.io/the-frontroom/)
 # 夕暮れの部屋 — Acrylic Star
 
