@@ -139,6 +139,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
 const $ = s => document.querySelector(s);
 const TAU = Math.PI * 2;
@@ -754,7 +755,11 @@ const seat=box(.55,.06,.51,fabric,chair,0,.55,0);
 for(const x of [-.265,.265]) box(.045,.58,.045,wood,chair,x,.76,.245);
 box(.58,.31,.06,wood,chair,0,.93,.245);
 let chairMoved=false;
-actionable(chair,'いすを引く / 戻す',()=>{
+actionable(chair,'いすを調べる / 引く / 戻す',()=>{
+  if(activeAnomaly==='floating'){
+    toast('椅子は床から離れている。支えるものは、何も見当たらない。',3300);
+    return;
+  }
   chairMoved=!chairMoved;
   animateTo(chair.position,{z:chairMoved?-.83:-1.65},.65);
   animateTo(chair.rotation,{y:chairMoved?.32:.13},.65);
@@ -910,15 +915,14 @@ const blanketGeo=new THREE.PlaneGeometry(2.10,2.19,45,45);
   const p=blanketGeo.attributes.position;
   for(let i=0;i<p.count;i++){
     const x=p.getX(i),y=p.getY(i);
-    // 左端だけ、マットレスの角を越えてから垂らす。
-    // 右端の形状と、中央の布のうねりは変更しない。
-    const leftLift=.035*THREE.MathUtils.smoothstep(-x,.55,.88);
-    const drape=x<0
-      ? Math.max(0,-x-.95)*1.55
-      : Math.max(0,x-.88)*1.55;
+    // 左右とも、マットレスの角を越えてから布を垂らす。
+    // 中央のうねりは維持し、端だけ少し持ち上げる。
+    const edgeDistance=Math.abs(x);
+    const edgeLift=.035*THREE.MathUtils.smoothstep(edgeDistance,.55,.88);
+    const drape=Math.max(0,edgeDistance-.95)*1.55;
     p.setZ(i,
       .015*Math.sin(x*22+y*5)+.008*Math.sin(y*28+x*7)
-      +leftLift-drape
+      +edgeLift-drape
     );
   }
   blanketGeo.computeVertexNormals();
@@ -1180,6 +1184,352 @@ for(const object of wardrobe.children){
   });
 }
 
+// 異変の描画・状態。最初の部屋では、すべて無効。
+let activeAnomaly='normal';
+const ANOMALY_CHANCE=.55;
+const anomalyNames={
+  normal:'異変のない部屋',
+  rain:'雨の降る部屋',
+  floating:'椅子の浮く部屋',
+  yellow:'黄色い部屋'
+};
+
+// 壁紙と床の元マテリアルは保管し、異変解除時に戻す。
+// 廊下や家具のマテリアル自体を書き換えない。
+const roomSurfaces=[];
+for(const object of scene.children){
+  if(!object.isMesh)continue;
+  const params=object.geometry.parameters;
+  const isRoomFloor=params &&
+    params.width===8 && params.height===.16 && params.depth===8;
+  if(object.material===wall || isRoomFloor){
+    roomSurfaces.push({
+      object,
+      original:object.material,
+      floor:isRoomFloor
+    });
+  }
+}
+const yellowWallMaterial=material('#fff16a',.92,0,{
+  bumpMap:tiled(wallpaperTexture,4,2),bumpScale:.003
+});
+const yellowFloorMaterial=material('#f5e85a',.48,0,{
+  bumpMap:tiled(weaveTexture,10,10),bumpScale:.0015
+});
+
+const rainRoomRoot=group();
+rainRoomRoot.visible=false;
+
+// 反射は環境マップだけでなく、現在の室内を平面反射で描画する。
+// 浅い水なので、反射を薄く重ねて床の木目も見せる。
+const waterReflection=new Reflector(new THREE.PlaneGeometry(7.86,7.86),{
+  clipBias:.003,
+  textureWidth:768,
+  textureHeight:768,
+  color:0xc6d5d8
+});
+waterReflection.rotation.x=-Math.PI/2;
+waterReflection.position.y=.041;
+waterReflection.material.transparent=true;
+waterReflection.material.depthWrite=false;
+waterReflection.material.uniforms.waterTime={value:0};
+waterReflection.material.fragmentShader=`
+  uniform sampler2D tDiffuse;
+  uniform float waterTime;
+  varying vec4 vUv;
+
+  void main(){
+    vec2 uv=vUv.xy/vUv.w;
+    vec2 drift=vec2(
+      sin(uv.y*91.0+waterTime*.85)+sin(uv.x*53.0-waterTime*.63),
+      cos(uv.x*83.0+waterTime*.71)+sin(uv.y*67.0+waterTime*.49)
+    )*.00085;
+    vec3 reflected=texture2D(tDiffuse,uv+drift).rgb;
+    gl_FragColor=vec4(reflected*vec3(.92,.98,1.0),.25);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+waterReflection.material.needsUpdate=true;
+waterReflection.renderOrder=1;
+waterReflection.userData.skipRoomPreview=true;
+rainRoomRoot.add(waterReflection);
+
+const waterGeometry=new THREE.PlaneGeometry(7.86,7.86,88,88);
+const waterBase=new Float32Array(waterGeometry.attributes.position.array);
+const waterMaterial=new THREE.MeshPhysicalMaterial({
+  color:'#b4d0ce',
+  roughness:.115,
+  metalness:0,
+  transmission:.62,
+  thickness:.045,
+  ior:1.333,
+  transparent:true,
+  opacity:.46,
+  clearcoat:1,
+  clearcoatRoughness:.09,
+  envMapIntensity:1.1,
+  depthWrite:false
+});
+const waterSurface=mesh(waterGeometry,waterMaterial,rainRoomRoot,0,.056,0);
+waterSurface.rotation.x=-Math.PI/2;
+waterSurface.castShadow=false;
+waterSurface.receiveShadow=false;
+waterSurface.renderOrder=2;
+
+// 波紋は使い回す。歩行・雨の衝突位置から外側へ広がる。
+const waterRipples=[];
+const rippleGeometry=new THREE.RingGeometry(.93,1,64);
+for(let i=0;i<40;i++){
+  const rippleMaterial=new THREE.MeshBasicMaterial({
+    color:'#d7eee9',
+    transparent:true,
+    opacity:0,
+    depthWrite:false,
+    side:THREE.DoubleSide
+  });
+  const ring=mesh(rippleGeometry,rippleMaterial,rainRoomRoot);
+  ring.rotation.x=-Math.PI/2;
+  ring.castShadow=false;
+  ring.receiveShadow=false;
+  ring.visible=false;
+  ring.renderOrder=3;
+  waterRipples.push({
+    ring,x:0,z:0,born:-100,strength:0,lifetime:2
+  });
+}
+let rippleCursor=0;
+let waterStepDistance=0;
+let waterFootSide=1;
+let rainImpactClock=0;
+
+function emitWaterRipple(x,z,strength=1){
+  if(Math.abs(x)>3.82 || Math.abs(z)>3.82)return;
+  const ripple=waterRipples[rippleCursor++%waterRipples.length];
+  ripple.x=x;
+  ripple.z=z;
+  ripple.born=time;
+  ripple.strength=strength;
+  ripple.lifetime=strength>.7?2.2:1.45;
+  ripple.ring.position.set(x,.069,z);
+  ripple.ring.scale.setScalar(.025);
+  ripple.ring.material.opacity=.15*strength;
+  ripple.ring.visible=true;
+}
+
+function addWaterFootsteps(distance){
+  if(activeAnomaly!=='rain' || mode!=='room')return;
+  waterStepDistance+=distance;
+  if(waterStepDistance<.34)return;
+  waterStepDistance%=.34;
+  waterFootSide*=-1;
+  const footOffset=.10*waterFootSide;
+  emitWaterRipple(
+    camera.position.x+Math.cos(yaw)*footOffset,
+    camera.position.z-Math.sin(yaw)*footOffset,
+    1
+  );
+}
+
+// 雨粒は細い短線で描画。水面上の空間だけを使う。
+const RAIN_COUNT=760;
+const rainPositions=new Float32Array(RAIN_COUNT*6);
+const rainDrops=[];
+let weatherSeed=371947;
+function weatherRandom(){
+  weatherSeed=(Math.imul(weatherSeed,1664525)+1013904223)>>>0;
+  return weatherSeed/4294967296;
+}
+
+// 雨が家具を突き抜け続けないよう、降雨位置ごとの着地点を保存する。
+const rainRaycaster=new THREE.Raycaster();
+const rainCatchers=[desk,chair,trash,wardrobe,bed];
+let rainSurfacesDirty=true;
+
+function rainLandingHeight(x,z){
+  rainRaycaster.set(
+    new THREE.Vector3(x,3.13,z),
+    new THREE.Vector3(0,-1,0)
+  );
+  const hits=rainRaycaster.intersectObjects(rainCatchers,true);
+  for(const hit of hits){
+    if(!hierarchyVisible(hit.object))continue;
+    if(hit.point.y>.065 && hit.point.y<3.12)return hit.point.y+.012;
+  }
+  return .065;
+}
+
+for(let i=0;i<RAIN_COUNT;i++){
+  rainDrops.push({
+    x:(weatherRandom()-.5)*7.65,
+    z:(weatherRandom()-.5)*7.65,
+    y:.08+weatherRandom()*3.01,
+    speed:2.3+weatherRandom()*1.8,
+    length:.055+weatherRandom()*.065,
+    landing:.065
+  });
+}
+const rainGeometry=new THREE.BufferGeometry();
+rainGeometry.setAttribute('position',new THREE.BufferAttribute(rainPositions,3));
+rainGeometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
+const indoorRain=new THREE.LineSegments(rainGeometry,new THREE.LineBasicMaterial({
+  color:'#cfdee1',
+  transparent:true,
+  opacity:.31,
+  depthWrite:false
+}));
+indoorRain.frustumCulled=false;
+indoorRain.renderOrder=4;
+rainRoomRoot.add(indoorRain);
+
+const floatingChairBase=new THREE.Vector3();
+
+function chooseRoomAnomaly(index){
+  if(index===0)return 'normal';
+  const rng=roomRandom(index+971);
+  if(rng()>=ANOMALY_CHANCE)return 'normal';
+  return ['rain','floating','yellow'][Math.floor(rng()*3)];
+}
+
+function resetAnomalyBeforeLayout(){
+  for(let i=tweens.length-1;i>=0;i--){
+    if(tweens[i].obj===chair.position || tweens[i].obj===chair.rotation){
+      tweens.splice(i,1);
+    }
+  }
+  chair.position.set(-2.45,0,-1.65);
+  chair.rotation.set(0,.13,0);
+  chairMoved=false;
+  chair.userData.label='いすを調べる / 引く / 戻す';
+
+  for(const surface of roomSurfaces){
+    surface.object.material=surface.original;
+  }
+  rainRoomRoot.visible=false;
+  waterStepDistance=0;
+  rainImpactClock=0;
+  for(const ripple of waterRipples){
+    ripple.born=-100;
+    ripple.ring.visible=false;
+  }
+}
+
+function activateRoomAnomaly(index){
+  activeAnomaly=chooseRoomAnomaly(index);
+
+  if(activeAnomaly==='yellow'){
+    for(const surface of roomSurfaces){
+      surface.object.material=surface.floor
+        ? yellowFloorMaterial : yellowWallMaterial;
+    }
+  }
+
+  if(activeAnomaly==='floating'){
+    // レイアウト変換の逆行列を使い、部屋の中央に置く。
+    deskLayoutRoot.updateWorldMatrix(true,false);
+    floatingChairBase.copy(
+      deskLayoutRoot.worldToLocal(new THREE.Vector3(0,1.35,0))
+    );
+    chair.position.copy(floatingChairBase);
+    chair.rotation.set(0,.13,0);
+    chair.userData.label='浮いている椅子を調べる';
+  }
+
+  if(activeAnomaly==='rain'){
+    rainRoomRoot.visible=true;
+    rainSurfacesDirty=true;
+  }
+}
+
+function updateRoomAnomaly(dt){
+  if(activeAnomaly==='floating'){
+    chair.position.copy(floatingChairBase);
+    chair.position.y+=Math.sin(time*.79)*.085+
+      Math.sin(time*1.31)*.018;
+    chair.rotation.set(
+      Math.sin(time*.63)*.035,
+      .13+Math.sin(time*.37)*.18,
+      Math.sin(time*.52+1.2)*.038
+    );
+  }
+  if(activeAnomaly!=='rain')return;
+
+  // 家具を動かしている間と、その直後に雨の着地点を更新する。
+  if(rainSurfacesDirty || tweens.length>0){
+    scene.updateMatrixWorld(true);
+    for(const drop of rainDrops){
+      drop.landing=rainLandingHeight(drop.x,drop.z);
+    }
+    rainSurfacesDirty=tweens.length>0;
+  }
+
+  rainImpactClock+=dt;
+  for(let i=0;i<rainDrops.length;i++){
+    const drop=rainDrops[i];
+    drop.y-=drop.speed*dt;
+    if(drop.y<=drop.landing){
+      if(drop.landing<.08 && rainImpactClock>.07){
+        emitWaterRipple(drop.x,drop.z,.32+weatherRandom()*.18);
+        rainImpactClock=0;
+      }
+      drop.y=3.02+weatherRandom()*.07;
+    }
+    const offset=i*6;
+    rainPositions[offset]=drop.x;
+    rainPositions[offset+1]=Math.max(drop.landing,drop.y);
+    rainPositions[offset+2]=drop.z;
+    rainPositions[offset+3]=drop.x+.007;
+    rainPositions[offset+4]=Math.min(3.14,Math.max(drop.landing,drop.y)+drop.length);
+    rainPositions[offset+5]=drop.z+.002;
+  }
+  rainGeometry.attributes.position.needsUpdate=true;
+
+  const liveRipples=[];
+  for(const ripple of waterRipples){
+    const age=time-ripple.born;
+    if(age<0 || age>ripple.lifetime){
+      ripple.ring.visible=false;
+      continue;
+    }
+    liveRipples.push(ripple);
+    const radius=.025+age*(ripple.strength>.7?.52:.31);
+    ripple.ring.scale.set(radius,radius,1);
+    ripple.ring.material.opacity=
+      ripple.strength*.17*Math.pow(1-age/ripple.lifetime,1.65);
+    ripple.ring.visible=true;
+  }
+
+  // 複数方向の緩やかな波に、歩行・雨の放射状の波を重ねる。
+  const positions=waterGeometry.attributes.position;
+  for(let i=0;i<positions.count;i++){
+    const x=waterBase[i*3];
+    const z=-waterBase[i*3+1];
+    let height=
+      Math.sin(x*2.7+z*1.4+time*.84)*.0020+
+      Math.sin(z*4.6-x*.9-time*.67)*.0013+
+      Math.sin(x*8.1+z*3.3+time*1.18)*.00065;
+
+    for(const ripple of liveRipples){
+      const age=time-ripple.born;
+      const distance=Math.hypot(x-ripple.x,z-ripple.z);
+      const radius=age*(ripple.strength>.7?.52:.31);
+      const delta=distance-radius;
+      if(Math.abs(delta)>.34)continue;
+      height+=Math.sin(delta*34)*
+        Math.exp(-delta*delta*75)*
+        Math.exp(-age*1.6)*
+        .006*ripple.strength;
+    }
+
+    // 壁際は波高を絞り、壁を突き抜けるうねりを抑える。
+    const shore=clamp((3.93-Math.max(Math.abs(x),Math.abs(z)))/.18,0,1);
+    positions.setZ(i,height*shore);
+  }
+  positions.needsUpdate=true;
+  waterGeometry.computeVertexNormals();
+  waterReflection.material.uniforms.waterTime.value=time;
+}
+
 const ROOM_COUNT=8;
 let activeRoomIndex=0;
 let corridorRoomIndex=0;
@@ -1193,6 +1543,8 @@ function roomRandom(index){
 }
 
 function applyRoomLayout(index){
+  resetAnomalyBeforeLayout();
+
   for(const saved of wardrobeStorage){
     const object=saved.object;
     // 床へ置いている途中の補間も止める。
@@ -1260,6 +1612,8 @@ function applyRoomLayout(index){
       1.18+Math.floor(i/4)*1.12
     );
   }
+  scene.updateMatrixWorld(true);
+  activateRoomAnomaly(index);
   scene.updateMatrixWorld(true);
 }
 
@@ -1389,7 +1743,8 @@ function canWalkAt(x,z,eyeY){
     {minX:-3.65,maxX:-1.45,minZ:-3.43,maxZ:-2.37},
     {
       minX:chair.position.x-.35,maxX:chair.position.x+.35,
-      minZ:chair.position.z-.34,maxZ:chair.position.z+.34
+      minZ:chair.position.z-.34,maxZ:chair.position.z+.34,
+      minY:activeAnomaly==='floating'?chair.position.y:0
     },
     {
       minX:trash.position.x-.19,maxX:trash.position.x+.19,
@@ -1451,6 +1806,7 @@ function updateWalking(dt){
   // 視点移動アニメーション中でも、キー入力を優先する。
   cameraTravel=null;
 
+  const walkStart=camera.position.clone();
   const speed=currentView==='under'?.65:1.65;
   const distance=speed*dt/Math.hypot(forward,sideways);
   const dx=(-Math.sin(yaw)*forward+Math.cos(yaw)*sideways)*distance;
@@ -1470,6 +1826,11 @@ function updateWalking(dt){
     }
   }
 
+  // 座標をループ変換する前に、実際に歩けた距離だけで波紋を作る。
+  addWaterFootsteps(Math.hypot(
+    camera.position.x-walkStart.x,
+    camera.position.z-walkStart.z
+  ));
   updateAreaCrossing();
 
   // 手動移動後は「固定視点にいる」という表示だけ外す。
@@ -1687,21 +2048,43 @@ const previewRoomLight=new THREE.PointLight('#fff0d3',38,12,2);
 previewRoomLight.position.set(-5,2.93,-2.65);
 corridorScene.add(previewRoomLight);
 
+const roomPreviewFollowers=[];
+
 function refreshRoomPreview(){
   corridorRoomPreview.clear();
+  roomPreviewFollowers.length=0;
   scene.updateMatrixWorld(true);
   scene.traverse(object=>{
     if(!object.isMesh && !object.isLineSegments && !object.isPoints)return;
-    if(!hierarchyVisible(object))return;
+    if(!hierarchyVisible(object) || object.userData.skipRoomPreview)return;
+
+    let followsChair=false;
     for(let parent=object;parent;parent=parent.parent){
       if(parent===roomCorridorPreview || parent===roomDoorLeaf)return;
+      if(parent===chair)followsChair=true;
     }
+
+    // Reflector自体は複製しない。廊下側では、水面マテリアルの
+    // 環境反射・透過と、共有した波形・雨のジオメトリを使用する。
     const copy=object.clone(false);
     copy.userData={};
     copy.matrixAutoUpdate=false;
     copy.matrix.copy(object.matrixWorld);
     corridorRoomPreview.add(copy);
+
+    if(followsChair){
+      roomPreviewFollowers.push({source:object,copy});
+    }
   });
+}
+
+function updateAnomalyPreview(){
+  if(mode!=='corridor' || activeAnomaly!=='floating')return;
+  chair.updateWorldMatrix(true,true);
+  for(const follower of roomPreviewFollowers){
+    follower.copy.matrix.copy(follower.source.matrixWorld);
+    follower.copy.matrixWorldNeedsUpdate=true;
+  }
 }
 
 function isHallFloorAt(x,z){
@@ -1796,10 +2179,16 @@ function updateAreaCrossing(){
     currentView='room';
     cameraTravel=null;
     setAreaHUD();
-    toast(
-      `部屋 ${String(activeRoomIndex+1).padStart(2,'0')}。同じ部屋なのに、家具の場所が少し違う。`,
-      3500
-    );
+    const roomNumber=String(activeRoomIndex+1).padStart(2,'0');
+    const descriptions={
+      normal:activeRoomIndex===0
+        ? '最初の部屋に戻ってきた。見慣れた配置だ。'
+        : '同じ部屋なのに、家具の場所が少し違う。',
+      rain:'天井の内側から雨が降っている。足元には、薄く水が溜まっている。',
+      floating:'部屋の中央で、椅子が静かに浮いている。',
+      yellow:'壁も床も、淡く鮮やかな黄色に変わっている。'
+    };
+    toast(`部屋 ${roomNumber}。${descriptions[activeAnomaly]}`,4200);
   }
 }
 
@@ -1934,6 +2323,8 @@ function tick(){
     hallwayDoorLeaf.rotation.y=roomDoorLeaf.rotation.y;
   }
   updateWalking(dt);
+  updateRoomAnomaly(dt);
+  updateAnomalyPreview();
 
   // 点灯は速い。消灯は先に暖色へ寄り、その後に減衰。
   if(roomLightOn){
