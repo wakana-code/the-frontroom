@@ -1481,7 +1481,8 @@ function updateWalking(dt){
 // 廊下は直線、左折、右折、突き当たりの折り返しを持つ反復区間。
 // 区間端の直線部分で座標を巻き戻すため、曲がり角の形を保って循環する。
 const corridorScene=new THREE.Scene();
-corridorScene.background=new THREE.Color('#242b2e');
+// 描画範囲の外は、遠景の霧と同じ色にする。
+corridorScene.background=new THREE.Color('#343c3c');
 corridorScene.environment=envRT.texture;
 corridorScene.environmentIntensity=.19;
 corridorScene.fog=new THREE.Fog('#343c3c',13,31);
@@ -1507,12 +1508,33 @@ function addHallRectangle(minX,maxX,minZ,maxZ){
     }
   }
 }
-for(let i=1;i<corridorPath.length;i++){
-  const a=corridorPath[i-1],b=corridorPath[i];
-  addHallRectangle(
-    Math.min(a[0],b[0])-1,Math.max(a[0],b[0])+1,
-    Math.min(a[1],b[1])-1,Math.max(a[1],b[1])+1
-  );
+// 移動に使う中央区間に加え、前後にも廊下を描画する。
+// 各区間を正確に32mで区切ってから結合することで、
+// 継ぎ目の壁・床の重複や、描画の途切れを防ぐ。
+const HALL_SECTION_MIN=-10;
+const HALL_SECTION_MAX=22;
+const HALL_RENDER_MIN=HALL_SECTION_MIN-HALL_PERIOD;
+const HALL_RENDER_MAX=HALL_SECTION_MAX+HALL_PERIOD;
+
+for(let repeat=-1;repeat<=1;repeat++){
+  const offset=repeat*HALL_PERIOD;
+  for(let i=1;i<corridorPath.length;i++){
+    const a=corridorPath[i-1],b=corridorPath[i];
+    const minZ=Math.max(
+      HALL_SECTION_MIN,Math.min(a[1],b[1])-1
+    );
+    const maxZ=Math.min(
+      HALL_SECTION_MAX,Math.max(a[1],b[1])+1
+    );
+    if(minZ>=maxZ)continue;
+
+    addHallRectangle(
+      Math.min(a[0],b[0])-1,
+      Math.max(a[0],b[0])+1,
+      minZ+offset,
+      maxZ+offset
+    );
+  }
 }
 
 const hallFloorParts=[],hallWallParts=[],hallTrimParts=[],hallCeilingParts=[];
@@ -1532,8 +1554,13 @@ for(const key of hallCells){
     const bx=x+dx*HALL_CELL/2;
     const bz=z+dz*HALL_CELL/2;
 
-    // 区間端は開けたまま。プレイヤーは端より手前で巻き戻される。
-    if(dz!==0 && (bz<=-12.9 || bz>=24.9))continue;
+    // 中央のループ境界には、隣の区間の床があるので壁は生成されない。
+    // 描画専用の延長区間の最端部も塞がない。
+    // この端部は、プレイヤーから常に霧の最大距離より遠くにある。
+    if(dz!==0 &&
+       (bz<=HALL_RENDER_MIN+.001 || bz>=HALL_RENDER_MAX-.001)){
+      continue;
+    }
 
     const width=dx===0?HALL_CELL:.10;
     const depth=dx===0?.10:HALL_CELL;
@@ -1618,15 +1645,39 @@ const hallLampMat=material('#f1e1bd',.45,0,{
 });
 const lampLocations=[
   [0,-10],[0,-4],[0,2],[2.5,5],
-  [5,7.5],[2.5,10],[0,13],[0,19],[0,24]
+  [5,7.5],[2.5,10],[0,13],[0,19]
 ];
-for(const [x,z] of lampLocations){
-  const light=new THREE.PointLight('#ffe4b4',8.5,8.5,2);
-  light.position.set(x,2.78,z);
-  corridorScene.add(light);
-  cylinder(.16,.19,.055,brass,corridorScene,x,3.08,z);
-  cylinder(.145,.145,.035,hallLampMat,corridorScene,x,3.035,z);
+const hallLightPool=[];
+
+// 照明器具も同じ間隔で繰り返し、座標切り替え前後の見た目を揃える。
+for(let repeat=-1;repeat<=1;repeat++){
+  for(const [x,localZ] of lampLocations){
+    const z=localZ+repeat*HALL_PERIOD;
+    cylinder(.16,.19,.055,brass,corridorScene,x,3.08,z);
+    cylinder(.145,.145,.035,hallLampMat,corridorScene,x,3.035,z);
+    hallLightPool.push(new THREE.Vector3(x,2.78,z));
+  }
 }
+
+// 点光源の総数は固定し、現在地に近い器具へ割り当てる。
+// 延長した廊下の分まで大量の点光源を同時に計算しない。
+const activeHallLights=Array.from({length:9},()=>{
+  const light=new THREE.PointLight('#ffe4b4',8.5,8.5,2);
+  corridorScene.add(light);
+  return light;
+});
+function updateHallLights(){
+  const viewer=mode==='corridor'
+    ? camera.position
+    : new THREE.Vector3(0,1.64,0);
+  const nearest=hallLightPool.slice().sort((a,b)=>
+    a.distanceToSquared(viewer)-b.distanceToSquared(viewer)
+  );
+  activeHallLights.forEach((light,i)=>{
+    light.position.copy(nearest[i]);
+  });
+}
+updateHallLights();
 
 // 扉の向こうに現在の部屋を見せる静的プレビュー。
 // 出入りの境界で実シーンへ切り替える。家具の配置は実室と一致させる。
@@ -1944,6 +1995,8 @@ function tick(){
     $('#tip').textContent=hovered?.userData.label||'';
     $('#tip').style.opacity=hovered?'1':'0';
   }
+  if(mode==='corridor')updateHallLights();
+
   renderer.render(
     mode==='inspect'?inspectScene:mode==='corridor'?corridorScene:scene,
     mode==='inspect'?inspectCamera:camera
