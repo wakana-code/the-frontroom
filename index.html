@@ -195,6 +195,44 @@
     border:1px solid #ffffff40;background:#152023a6;
     color:#e2eae4;border-radius:5px;padding:11px 19px;font-size:12px;
   }
+  #developerOverlay{
+    position:fixed;inset:0;z-index:300;
+    display:none;place-items:center;padding:20px;
+    background:#081017b8;backdrop-filter:blur(12px);
+  }
+  #developerPanel{
+    width:min(460px,100%);
+    padding:27px;background:#182329f5;
+    border:1px solid #c8e4d930;border-radius:15px;
+    box-shadow:0 20px 90px #0006;
+    color:#edf5ef;
+  }
+  #developerPanel small{
+    font:10px monospace;letter-spacing:.18em;color:#9fc7b9;
+  }
+  #developerPanel h2{
+    margin:12px 0;font-size:22px;font-weight:500;
+  }
+  #developerPanel p{
+    font-size:12px;line-height:1.9;color:#bbc9c5;
+  }
+  #developerPanel .devDestination{
+    width:100%;text-align:left;margin-top:10px;
+    padding:14px 16px;border-radius:8px;
+    border:1px solid #ffffff24;background:#e4f7ed09;
+    color:#eef6f1;font-size:13px;line-height:1.7;
+  }
+  #developerPanel .devDestination:hover{
+    background:#d8f5e81c;border-color:#b5e0cb70;
+  }
+  #developerPanel .devDestination span{
+    display:block;font-size:11px;color:#aabdb5;
+  }
+  #developerClose{
+    display:block;margin:19px 0 0 auto;
+    border:0;background:none;color:#c6d6ce;
+    padding:7px 0 7px 14px;font-size:12px;
+  }
   @media(max-width:600px){
     #hud{top:17px;left:17px} #hud h1{font-size:19px}
     #nav{bottom:13px;gap:4px}
@@ -275,6 +313,29 @@
     <button id="dramaStay">このまま部屋を眺める</button>
   </div>
   <button id="dramaReturn">選択に戻る</button>
+</div>
+
+<div id="developerOverlay">
+  <section id="developerPanel" role="dialog"
+    aria-modal="true" aria-labelledby="developerTitle">
+    <small>DEVELOPER MODE / ↑ ↑ ↓ ↓ ← → ← →</small>
+    <h2 id="developerTitle">確認したい場所へ</h2>
+    <p>ジャンプ先に合わせて進行状況を変更します。<br>
+    メニュー表示中も、演出の時間は進みます。</p>
+    <button class="devDestination" data-dev-jump="special">
+      特殊な部屋
+      <span>白い部屋。丸いアクリル板は床にある状態。</span>
+    </button>
+    <button class="devDestination" data-dev-jump="first">
+      アクリル板を持って、最初の部屋へ
+      <span>ベッドの下でポーチを開き、合体演出を確認できます。</span>
+    </button>
+    <button class="devDestination" data-dev-jump="ending">
+      エンディング
+      <span>白いフェードからエンドロール、その後の会話へ。</span>
+    </button>
+    <button id="developerClose">閉じる（Esc）</button>
+  </section>
 </div>
 
 <script type="module">
@@ -2162,6 +2223,88 @@ let carrySprint=0;
 let carryStride=0;
 let carryMotion=0;
 let carryArrival=0;
+
+// カメラの足取り。アクリル板の揺れとは別に、控えめな振幅で動かす。
+let cameraGaitPhase=0;
+let cameraGaitBlend=0;
+let cameraSprintBlend=0;
+const cameraGaitOffset=new THREE.Vector3();
+let cameraGaitPitch=0;
+let cameraGaitRoll=0;
+const unshakenCameraPosition=new THREE.Vector3();
+const unshakenCameraQuaternion=new THREE.Quaternion();
+
+function resetCameraGait(){
+  cameraGaitPhase=0;
+  cameraGaitBlend=0;
+  cameraSprintBlend=0;
+  cameraGaitOffset.set(0,0,0);
+  cameraGaitPitch=0;
+  cameraGaitRoll=0;
+}
+
+function updateCameraGait(dt){
+  const allowed=
+    !cameraTravel &&
+    !epilogueActive &&
+    !developerMenuOpen &&
+    endingStage==='none' &&
+    (mode==='room' || mode==='corridor');
+
+  const moving=allowed && walkedThisFrame>.0001;
+  cameraGaitBlend=lerp(
+    cameraGaitBlend,moving?1:0,
+    1-Math.exp(-dt*(moving?8:11))
+  );
+  cameraSprintBlend=lerp(
+    cameraSprintBlend,moving && sprintThisFrame?1:0,
+    1-Math.exp(-dt*6)
+  );
+
+  if(moving){
+    cameraGaitPhase+=walkedThisFrame*
+      lerp(10.2,8.1,cameraSprintBlend);
+  }
+
+  const lowView=currentView==='under'?.33:1;
+  const amplitude=
+    lerp(.012,.033,cameraSprintBlend)*cameraGaitBlend*lowView;
+
+  // 基本の足取りに小さな非対称の波を重ねる。
+  // ランダムな座標ジャンプは使わず、常に連続した動きにする。
+  const bob=
+    Math.sin(cameraGaitPhase)+
+    Math.sin(cameraGaitPhase*2+.65)*.16+
+    Math.sin(cameraGaitPhase*.53+time*.39)*.09;
+
+  const lateral=
+    Math.sin(cameraGaitPhase*.5+.25)*
+    lerp(.003,.007,cameraSprintBlend)*
+    cameraGaitBlend*lowView;
+
+  cameraGaitOffset.set(
+    Math.cos(yaw)*lateral,
+    bob*amplitude,
+    -Math.sin(yaw)*lateral
+  );
+
+  cameraGaitPitch=
+    Math.sin(cameraGaitPhase+.85)*
+    lerp(.0010,.0028,cameraSprintBlend)*
+    cameraGaitBlend*lowView;
+
+  cameraGaitRoll=
+    Math.sin(cameraGaitPhase*.5)*
+    lerp(.0011,.0031,cameraSprintBlend)*
+    cameraGaitBlend*lowView;
+
+  if(!allowed){
+    cameraGaitOffset.set(0,0,0);
+    cameraGaitPitch=0;
+    cameraGaitRoll=0;
+  }
+}
+
 let exitRouteActive=false;
 let endingStage='none';
 let endingAge=0;
@@ -2467,6 +2610,7 @@ const playerRadius=.16;
 
 function movementBlockedByUI(){
   return (mode!=='room' && mode!=='corridor') ||
+    developerMenuOpen ||
     paperVisible || fusionRunning || endingStage!=='none' ||
     $('#win').style.display==='grid';
 }
@@ -3469,6 +3613,249 @@ function updateEnding(dt){
   }
 }
 
+// 開発者モード。
+// Bはダッシュ用。開発者コマンドにはB/Aを含めない。
+let developerMenuOpen=false;
+const developerCommand=[
+  'ArrowUp','ArrowUp','ArrowDown','ArrowDown',
+  'ArrowLeft','ArrowRight','ArrowLeft','ArrowRight'
+];
+let developerCommandInput=[];
+let developerLastKeyTime=0;
+
+function setDeveloperMenu(open){
+  developerMenuOpen=open;
+  movementKeys.clear();
+  resetCameraGait();
+  $('#developerOverlay').style.display=open?'grid':'none';
+  if(open){
+    $('#tip').style.opacity='0';
+    $('#developerPanel .devDestination').focus();
+  }else{
+    const active=document.activeElement;
+    if(active instanceof HTMLElement &&
+       $('#developerOverlay').contains(active)){
+      active.blur();
+    }
+  }
+}
+
+$('#developerClose').onclick=()=>setDeveloperMenu(false);
+$('#developerOverlay').addEventListener('click',event=>{
+  if(event.target===$('#developerOverlay')){
+    setDeveloperMenu(false);
+  }
+});
+
+// キャプチャ段階で処理し、開発者メニューをEscで閉じたときに
+// 背後のポーチ画面まで同時に閉じないようにする。
+addEventListener('keydown',event=>{
+  if(event.code==='Escape' && developerMenuOpen){
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setDeveloperMenu(false);
+    return;
+  }
+
+  if(developerMenuOpen &&
+     (event.code==='Enter' || event.code==='Space')){
+    // メニューのボタン操作は許可し、背後の会話送りには伝えない。
+    event.stopImmediatePropagation();
+    return;
+  }
+
+  const target=event.target;
+  if(target instanceof HTMLElement &&
+     (target.isContentEditable ||
+      ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)))return;
+
+  if(!event.code.startsWith('Arrow'))return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if(event.repeat)return;
+
+  const now=performance.now();
+  if(now-developerLastKeyTime>5000){
+    developerCommandInput=[];
+  }
+  developerLastKeyTime=now;
+  developerCommandInput.push(event.code);
+
+  // 入力末尾がコマンドの先頭と一致する部分を残す。
+  // 押し間違えても、その場から入力し直せる。
+  while(developerCommandInput.length &&
+    !developerCommandInput.every((code,i)=>developerCommand[i]===code)){
+    developerCommandInput.shift();
+  }
+
+  if(developerCommandInput.length===developerCommand.length){
+    developerCommandInput=[];
+    setDeveloperMenu(!developerMenuOpen);
+  }
+},true);
+
+function resetForDeveloperJump(){
+  movementKeys.clear();
+  tweens.length=0;
+  cameraTravel=null;
+  resetCameraGait();
+
+  down=null;
+  dragging=false;
+  touches.clear();
+  hovered=null;
+  walkedThisFrame=0;
+  sprintThisFrame=false;
+  carryMotion=0;
+  carrySprint=0;
+  carryStride=0;
+  carryArrival=0;
+
+  // エンドロールや会話の途中からでも、通常のゲーム画面へ戻せる。
+  epilogueActive=false;
+  epilogueTime=0;
+  endingStage='none';
+  endingAge=0;
+  dialoguePause=0;
+  dialogueAge=0;
+  tapeGlitchDuration=0;
+  tapeGlitchAge=0;
+  nextTapeGlitch=5.2;
+  $('#ending').style.display='none';
+  $('#ending').style.opacity='0';
+  $('#endFinished').style.display='none';
+  creditsList.style.visibility='hidden';
+  creditsY=innerHeight+65;
+  $('#epilogue').style.display='none';
+  $('#dramaChoices').style.display='none';
+  $('#dramaReturn').style.display='none';
+  $('#tapeBand').style.opacity='0';
+
+  paperVisible=false;
+  $('#paperModal').style.display='none';
+  $('#win').style.display='none';
+  $('#hud').style.display='block';
+  $('#nav').style.display='flex';
+  $('#back').style.display='none';
+  $('#tip').style.display='block';
+  $('#tip').style.opacity='0';
+  clearTimeout(toastTimer);
+  $('#toast').classList.remove('show');
+
+  mode='room';
+  currentView='room';
+  exitRouteActive=false;
+  exitDoorRoot.visible=false;
+  finalDeadEnd.visible=false;
+  exitLeaf.rotation.y=0;
+  exitGlow.intensity=0;
+
+  fusionRunning=false;
+  fusionWait=0;
+  fusionDisk.visible=false;
+  acrylicCombined=false;
+  found=false;
+  diskCarried=false;
+  carriedStar.visible=false;
+  dreamDisk.visible=true;
+  pouchOpenedByRoom.clear();
+  pouchOpen=false;
+
+  drawerOpen=false;
+  drawer.position.z=0;
+  closetOpen=false;
+  leftDoor.rotation.y=0;
+  rightDoor.rotation.y=0;
+  doorOpen=false;
+  roomDoorLeaf.rotation.y=0;
+  hallwayDoorLeaf.rotation.y=0;
+
+  roomLightOn=true;
+  lightAmount=1;
+  lightOffAge=9;
+  mainLight.color.copy(warmWhite);
+  mainLight.intensity=38;
+  rocker.rotation.x=-.12;
+  lampOn=true;
+  deskLight.intensity=1.15;
+  lampGlow.emissiveIntensity=1.5;
+  windowLight.intensity=32;
+  scene.environmentIntensity=.20;
+  fillLight.intensity=.23;
+  renderer.toneMappingExposure=1.05;
+}
+
+function developerJump(destination){
+  resetForDeveloperJump();
+
+  activeRoomIndex=destination==='special'?SPECIAL_ROOM_INDEX:0;
+  corridorRoomIndex=activeRoomIndex;
+
+  // applyRoomLayoutが星の表示や、異変の状態も初期化する。
+  applyRoomLayout(activeRoomIndex);
+  updateRoomNumber();
+
+  if(destination==='first'){
+    diskCarried=true;
+    dreamDisk.visible=false;
+    carryArrival=1;
+    $('#objective').textContent=
+      '丸いアクリル板を持っている。ベッドの下で、最初のポーチを調べよう。';
+    gotoView('bed',true);
+  }else if(destination==='special'){
+    $('#objective').textContent=
+      '特殊な部屋。床の紙の上にある、丸いアクリル板を調べよう。';
+    gotoView('room',true);
+  }else{
+    // エンディングの前提だけを成立させ、白いフェードから開始する。
+    diskCarried=true;
+    acrylicCombined=true;
+    found=true;
+    carriedStar.visible=true;
+    dreamDisk.visible=false;
+    syncRoomPouch();
+
+    mode='corridor';
+    exitRouteActive=true;
+    exitDoorRoot.visible=true;
+    finalDeadEnd.visible=true;
+    exitLeaf.rotation.y=1.52;
+    exitGlow.intensity=30;
+    camera.position.set(5,1.64,7.35);
+    const view=anglesFor([5,1.64,7.35],[5,1.45,8.87]);
+    yaw=view.yaw;
+    pitch=view.pitch;
+    applyLook();
+
+    endingStage='white';
+    endingAge=0;
+    $('#ending').style.display='block';
+    $('#ending').style.opacity='0';
+    $('#objective').textContent='開発者モード：エンディングを再生中';
+  }
+
+  refreshRoomPreview();
+  scene.updateMatrixWorld(true);
+  corridorScene.updateMatrixWorld(true);
+  setAreaHUD();
+  setDeveloperMenu(false);
+
+  if(destination==='special'){
+    toast(
+      `開発者モード：特殊な部屋 ${String(activeRoomIndex+1).padStart(2,'0')} へ移動した。`,
+      3200
+    );
+  }else if(destination==='first'){
+    toast('開発者モード：丸い板を持って帰宅。ベッドの下へ潜り、ポーチを選ぼう。',4000);
+  }
+}
+
+document.querySelectorAll('[data-dev-jump]').forEach(button=>{
+  button.addEventListener('click',()=>{
+    developerJump(button.dataset.devJump);
+  });
+});
+
 // レイキャスト。手前の非操作物は遮蔽物として扱う。
 const raycaster=new THREE.Raycaster();
 const pointer=new THREE.Vector2();
@@ -3606,6 +3993,7 @@ function tick(){
   walkedThisFrame=0;
   sprintThisFrame=false;
   updateWalking(dt);
+  updateCameraGait(dt);
   updateRoomAnomaly(dt);
   updateAnomalyPreview();
   updateCarryAndStory(dt);
@@ -3664,7 +4052,7 @@ function tick(){
 
   hoverAge+=dt;
   if(hoverAge>.09 && !down && !paperVisible &&
-     !fusionRunning && endingStage==='none'){
+     !developerMenuOpen && !fusionRunning && endingStage==='none'){
     hoverAge=0;
     hovered=pick(lastPointer.x,lastPointer.y);
     renderer.domElement.style.cursor=hovered?'pointer':'grab';
@@ -3693,12 +4081,35 @@ function tick(){
     renderer.toneMappingExposure=.93;
   }
 
+  // 揺れは描画の瞬間だけ加える。
+  // 移動座標・当たり判定・視点移動の目標には蓄積させない。
+  const renderWithGait=
+    !epilogueActive &&
+    !developerMenuOpen &&
+    !cameraTravel &&
+    endingStage==='none' &&
+    (mode==='room' || mode==='corridor');
+
+  if(renderWithGait){
+    unshakenCameraPosition.copy(camera.position);
+    unshakenCameraQuaternion.copy(camera.quaternion);
+    camera.position.add(cameraGaitOffset);
+    camera.rotateX(cameraGaitPitch);
+    camera.rotateZ(cameraGaitRoll);
+  }
+
   renderer.render(
     epilogueActive?scene:
       mode==='inspect'?inspectScene:mode==='corridor'?corridorScene:scene,
     epilogueActive?epilogueCamera:
       mode==='inspect'?inspectCamera:camera
   );
+
+  if(renderWithGait){
+    camera.position.copy(unshakenCameraPosition);
+    camera.quaternion.copy(unshakenCameraQuaternion);
+    camera.updateMatrixWorld(true);
+  }
 
   if(diskCarried && !epilogueActive && mode!=='inspect' &&
      endingStage!=='credits' && endingStage!=='finished'){
