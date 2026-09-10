@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>夕暮れの部屋 — Acrylic Star</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#171b21}
+  body{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;color:#f5f2e9}
+  canvas{display:block;touch-action:none}
+  button{font:inherit;cursor:pointer}
+  #hud{
+    position:fixed;top:22px;left:25px;pointer-events:none;
+    text-shadow:0 2px 14px #000a;max-width:calc(100% - 40px)
+  }
+  #hud small{font-size:10px;letter-spacing:.25em;color:#dad8ce}
+  #hud h1{font-size:23px;font-weight:500;letter-spacing:.13em;margin:8px 0}
+  #objective{font-size:12px;color:#e1e1d7;line-height:1.8}
+  #help{margin-top:8px;font-size:11px;color:#c2c7c8}
+  #nav{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+    display:flex;gap:6px;padding:7px;border:1px solid #ffffff23;
+    border-radius:15px;background:#192024bd;backdrop-filter:blur(16px);
+    max-width:96vw;overflow-x:auto
+  }
+  #nav button,#back{
+    border:1px solid #ffffff13;background:#ffffff09;color:#e8e6dd;
+    border-radius:9px;padding:10px 14px;white-space:nowrap;font-size:12px;
+    transition:background .2s
+  }
+  #nav button:hover,#back:hover{background:#ffffff23}
+  #nav button.active{background:#ded8b82b;border-color:#ded8b858}
+  #back{position:fixed;right:22px;top:22px;display:none;background:#152023d9}
+  #tip{
+    position:fixed;left:50%;bottom:103px;transform:translateX(-50%);
+    background:#121b21c7;padding:10px 18px;border-radius:30px;
+    font-size:12px;pointer-events:none;text-align:center;max-width:90vw;
+    opacity:0;transition:opacity .2s;backdrop-filter:blur(10px)
+  }
+  #toast{
+    position:fixed;top:115px;left:50%;transform:translate(-50%,-7px);
+    padding:13px 22px;background:#eee9dadf;color:#38372e;
+    border:1px solid #fff7;border-radius:9px;font-size:12px;
+    line-height:1.7;opacity:0;transition:.3s;pointer-events:none;
+    max-width:86vw;text-align:center
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  #loading{
+    position:fixed;inset:0;z-index:30;display:grid;place-content:center;
+    background:#192026;text-align:center;line-height:2.2;font-size:13px
+  }
+  #loading span{font-size:10px;letter-spacing:.3em;color:#b6bcb9}
+  #paperModal{
+    position:fixed;inset:0;z-index:20;display:none;
+    background:#080d14bd;backdrop-filter:blur(7px);padding:28px 14px;
+    overflow:auto
+  }
+  #paperSheet{
+    max-width:710px;margin:auto;background:#eee9d9;color:#35352f;
+    padding:45px 48px;box-shadow:0 16px 90px #0008;
+    background-image:repeating-linear-gradient(0deg,#00000002 0 1px,transparent 1px 3px)
+  }
+  #paperSheet .stamp{font:10px monospace;letter-spacing:.18em;color:#797a6f}
+  #paperSheet h2{font-size:22px;font-weight:500;margin:22px 0}
+  #paperText{font-size:14px;line-height:2.1;white-space:pre-wrap}
+  #closePaper{
+    float:right;border:1px solid #79796b;background:none;
+    color:#4a4b40;padding:7px 13px;border-radius:4px
+  }
+  #win{
+    position:fixed;inset:0;z-index:15;display:none;place-content:center;
+    text-align:center;background:#07171c7a;backdrop-filter:blur(9px);
+    padding:25px
+  }
+  #win small{letter-spacing:.3em;color:#b5e7e4}
+  #win h2{font-size:36px;font-weight:400;letter-spacing:.13em}
+  #win p{font-size:13px;line-height:2;color:#e0e9e5}
+  #win button{
+    margin:20px auto 0;padding:12px 24px;background:#e9eee6;
+    border:0;border-radius:7px;color:#234049
+  }
+  @media(max-width:600px){
+    #hud{top:17px;left:17px} #hud h1{font-size:19px}
+    #nav{bottom:13px;gap:4px}
+    #nav button{padding:10px 11px;font-size:11px}
+    #paperSheet{padding:27px 23px} #help{font-size:10px}
+    #back{top:17px;right:13px;font-size:11px;padding:9px}
+  }
+</style>
+<script type="importmap">
+{
+  "imports":{
+    "three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="loading">部屋に光を入れています…<br><span>ACRYLIC STAR</span></div>
+
+<div id="hud">
+  <small>AN EVENING ROOM / EXPLORATION</small>
+  <h1>夕暮れの部屋</h1>
+  <div id="objective">この部屋のどこかにある、アクリルのスターを探す。</div>
+  <div id="help">ドラッグ：見回す　／　クリック：調べる　／　下のボタン：移動</div>
+</div>
+
+<div id="nav">
+  <button data-view="room" class="active">部屋</button>
+  <button data-view="desk">机</button>
+  <button data-view="closet">クローゼット</button>
+  <button data-view="bed">ベッド</button>
+  <button data-view="under">ベッドの下</button>
+  <button data-view="switch">スイッチ</button>
+</div>
+<button id="back">部屋に戻る ↩</button>
+<div id="tip"></div>
+<div id="toast"></div>
+
+<div id="paperModal">
+  <article id="paperSheet">
+    <button id="closePaper">閉じる ×</button>
+    <div class="stamp">PRIVATE / DEVELOPMENT MEMO / 01</div>
+    <h2>この部屋のコードについて</h2>
+    <div id="paperText"></div>
+  </article>
+</div>
+
+<div id="win">
+  <small>FOUND / ACRYLIC STAR</small>
+  <h2>星を、見つけた。</h2>
+  <p>茶色いポーチの中で、<br>小さなアクリルの縁が光を拾っていた。</p>
+  <button id="continue">そのまま部屋を眺める</button>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const $ = s => document.querySelector(s);
+const TAU = Math.PI * 2;
+const clamp = THREE.MathUtils.clamp;
+const lerp = THREE.MathUtils.lerp;
+
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#202932');
+scene.fog = new THREE.FogExp2('#36434b', .009);
+
+const inspectScene = new THREE.Scene();
+inspectScene.background = new THREE.Color('#202c31');
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envRoom = new RoomEnvironment();
+const envRT = pmrem.fromScene(envRoom, .045);
+envRoom.dispose();
+pmrem.dispose();
+scene.environment = envRT.texture;
+scene.environmentIntensity = .20;
+inspectScene.environment = envRT.texture;
+inspectScene.environmentIntensity = .85;
+
+const camera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.025,35);
+const inspectCamera = new THREE.PerspectiveCamera(42,innerWidth/innerHeight,.025,20);
+inspectCamera.position.set(0,.54,2.4);
+inspectCamera.lookAt(0,.43,0);
+
+let mode = 'room', currentView = 'room';
+let roomLightOn = true, lightAmount = 1, lightOffAge = 9;
+let drawerOpen = false, closetOpen = false, pouchOpen = false, found = false;
+let lampOn = true;
+let paperVisible = false;
+let toastTimer;
+let time = 0;
+const tweens = [];
+
+function toast(text,ms=3000){
+  $('#toast').textContent=text;
+  $('#toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),ms);
+}
+function animateTo(obj, values, duration=.65, complete){
+  // 同じプロパティを操作する古い補間を取り除く。
+  for(let i=tweens.length-1;i>=0;i--){
+    if(tweens[i].obj===obj &&
+       Object.keys(values).some(k=>k in tweens[i].to)) tweens.splice(i,1);
+  }
+  const from={};
+  for(const k in values) from[k]=obj[k];
+  tweens.push({obj,from,to:values,t:0,duration,complete});
+}
+function updateTweens(dt){
+  for(let i=tweens.length-1;i>=0;i--){
+    const a=tweens[i]; a.t+=dt;
+    const k=Math.min(1,a.t/a.duration);
+    const e=k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+    for(const p in a.to) a.obj[p]=lerp(a.from[p],a.to[p],e);
+    if(k===1){tweens.splice(i,1);a.complete?.();}
+  }
+}
+function actionable(obj,label,fn){
+  obj.userData.action=fn;
+  obj.userData.label=label;
+  return obj;
+}
+function group(parent=scene){
+  const g=new THREE.Group(); parent.add(g); return g;
+}
+function material(color,roughness=.6,metalness=0,extra={}){
+  return new THREE.MeshStandardMaterial({color,roughness,metalness,...extra});
+}
+function mesh(geo,mat,parent=scene,x=0,y=0,z=0){
+  const m=new THREE.Mesh(geo,mat);
+  m.position.set(x,y,z);
+  m.castShadow=true; m.receiveShadow=true;
+  parent.add(m); return m;
+}
+function box(w,h,d,mat,parent=scene,x=0,y=0,z=0){
+  return mesh(new THREE.BoxGeometry(w,h,d),mat,parent,x,y,z);
+}
+function cylinder(r1,r2,h,mat,parent=scene,x=0,y=0,z=0,segments=32){
+  return mesh(new THREE.CylinderGeometry(r1,r2,h,segments),mat,parent,x,y,z);
+}
+function sphere(r,mat,parent,x=0,y=0,z=0){
+  return mesh(new THREE.SphereGeometry(r,24,16),mat,parent,x,y,z);
+}
+function tube(points,r,mat,parent,closed=false){
+  const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)),closed);
+  return mesh(new THREE.TubeGeometry(curve,Math.max(16,points.length*7),r,7,closed),mat,parent);
+}
+function canvasTexture(draw,size=512){
+  const c=document.createElement('canvas');c.width=c.height=size;
+  draw(c.getContext('2d'),size);
+  const t=new THREE.CanvasTexture(c);
+  t.colorSpace=THREE.SRGBColorSpace;
+  t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+let seed=9173;
+function random(){
+  seed=(1664525*seed+1013904223)>>>0;
+  return seed/4294967296;
+}
+function tiled(t,x,y){
+  const a=t.clone();a.wrapS=a.wrapT=THREE.RepeatWrapping;
+  a.repeat.set(x,y);a.needsUpdate=true;return a;
+}
+
+const woodTexture=canvasTexture((c,s)=>{
+  c.fillStyle='#896649';c.fillRect(0,0,s,s);
+  for(let i=0;i<2500;i++){
+    const y=random()*s,a=.02+random()*.10;
+    c.strokeStyle=`rgba(${random()>.4?'48,26,11':'237,198,139'},${a})`;
+    c.lineWidth=.3+random()*1.4;c.beginPath();
+    for(let x=0;x<=s;x+=12){
+      const yy=y+Math.sin(x*.012+y*.018)*2.5+Math.sin(x*.035+y)*.7;
+      x?c.lineTo(x,yy):c.moveTo(x,yy);
+    }
+    c.stroke();
+  }
+  for(let i=0;i<7;i++){
+    const x=random()*s,y=random()*s;
+    for(let j=0;j<12;j++){
+      c.strokeStyle=`rgba(42,23,12,${.10-j*.006})`;
+      c.beginPath();c.ellipse(x,y,9+j*6,1.3+j*1.3,.04,0,TAU);c.stroke();
+    }
+  }
+});
+const floorTexture=canvasTexture((c,s)=>{
+  c.fillStyle='#a17b55';c.fillRect(0,0,s,s);
+  const rows=8,h=s/rows;
+  for(let r=0;r<rows;r++){
+    c.save();c.beginPath();c.rect(0,r*h,s,h);c.clip();
+    c.globalAlpha=.86;c.drawImage(woodTexture.image,0,r*h,s,h);
+    c.globalAlpha=1;
+    c.fillStyle=`rgba(${r%3?'18,8,0':'245,218,179'},.09)`;
+    c.fillRect(0,r*h,s,h);
+    c.fillStyle='#49372b';c.fillRect(0,r*h,s,.9);
+    c.fillStyle='#d0af85';c.fillRect(0,r*h+1,s,.7);
+    const offset=(r%3)*s/3;
+    c.fillStyle='#594331';c.fillRect(offset,r*h,1,h);
+    c.restore();
+  }
+},1024);
+const wallpaperTexture=canvasTexture((c,s)=>{
+  c.fillStyle='#d8d3c2';c.fillRect(0,0,s,s);
+  for(let i=0;i<40000;i++){
+    c.fillStyle=random()>.5?'#ffffff0b':'#4944350a';
+    c.fillRect(random()*s,random()*s,1,1.5);
+  }
+  for(let x=0;x<s;x+=32){
+    c.fillStyle='#aca89813';c.fillRect(x,0,2,s);
+    for(let y=16;y<s;y+=64){
+      c.strokeStyle='#99998519';c.lineWidth=.8;c.beginPath();
+      c.ellipse(x+16,y,4,10,0,0,TAU);c.stroke();
+    }
+  }
+});
+const weaveTexture=canvasTexture((c,s)=>{
+  c.fillStyle='#c9c3b4';c.fillRect(0,0,s,s);
+  for(let y=0;y<s;y+=4){
+    c.strokeStyle=y%8?'#a6a18f':'#e3ddcd';c.lineWidth=1;
+    c.beginPath();c.moveTo(0,y);c.lineTo(s,y);c.stroke();
+  }
+  for(let x=0;x<s;x+=3){
+    c.strokeStyle=x%6?'#fff2':'#39342633';
+    c.beginPath();c.moveTo(x,0);c.lineTo(x,s);c.stroke();
+  }
+  for(let i=0;i<9000;i++){
+    c.fillStyle=random()>.5?'#fff2':'#0001';
+    c.fillRect(random()*s,random()*s,1,2);
+  }
+});
+const leatherTexture=canvasTexture((c,s)=>{
+  c.fillStyle='#71472e';c.fillRect(0,0,s,s);
+  for(let i=0;i<42000;i++){
+    const x=random()*s,y=random()*s,r=.3+random()*1.25;
+    c.fillStyle=random()>.48?'#2e180c35':'#d7a57625';
+    c.beginPath();c.ellipse(x,y,r,r*.65,random()*3,0,TAU);c.fill();
+  }
+  for(let i=0;i<450;i++){
+    const x=random()*s,y=random()*s;
+    c.strokeStyle='#2413081b';c.lineWidth=.6;c.beginPath();
+    c.moveTo(x,y);c.lineTo(x+random()*12-6,y+random()*7);c.stroke();
+  }
+});
+const pagesTexture=canvasTexture((c,s)=>{
+  c.fillStyle='#e1d9c5';c.fillRect(0,0,s,s);
+  for(let y=0;y<s;y+=2){
+    c.fillStyle=`rgba(76,61,42,${.03+random()*.15})`;
+    c.fillRect(0,y,s,.5+random());
+  }
+});
+
+const wood=material('#d1ac80',.42,0,{map:woodTexture,bumpMap:woodTexture,bumpScale:.008});
+const darkWood=material('#867156',.48,0,{map:woodTexture,bumpMap:woodTexture,bumpScale:.008});
+const wall=material('#fff9ee',.96,0,{
+  map:tiled(wallpaperTexture,4,2),bumpMap:tiled(wallpaperTexture,4,2),bumpScale:.005
+});
+const trim=material('#dfdcd0',.5);
+const black=material('#171b1d',.42);
+const steel=material('#b7bec0',.25,.82);
+const brass=material('#b99451',.28,.72);
+const plastic=new THREE.MeshPhysicalMaterial({
+  color:'#eeeadd',roughness:.23,metalness:0,clearcoat:.7,clearcoatRoughness:.17
+});
+const fabric=material('#e2d5b5',.98,0,{map:tiled(weaveTexture,4,4),bumpMap:tiled(weaveTexture,4,4),bumpScale:.008});
+const leather=material('#b28765',.63,0,{
+  map:leatherTexture,bumpMap:leatherTexture,bumpScale:.009
+});
+const stitchMat=material('#c8aa78',.93);
+
+// 部屋。前面の壁も含めた、内部から眺める箱。
+box(8,.16,8,material('#ffffff',.51,0,{
+  map:tiled(floorTexture,3,3),bumpMap:tiled(floorTexture,3,3),bumpScale:.013
+}),scene,0,-.08,0);
+box(8,3.25,.14,wall,scene,0,1.625,-4.07);
+box(.14,3.25,8,wall,scene,4.07,1.625,0);
+box(8,3.25,.14,wall,scene,0,1.625,4.07);
+box(8,.12,8,material('#e5e1d6',.94),scene,0,3.31,0);
+
+// 窓のある左壁は、窓の部分を本当に開けておく。
+box(.14,3.25,2.85,wall,scene,-4.07,1.625,-2.575);
+box(.14,3.25,2.85,wall,scene,-4.07,1.625,2.575);
+box(.14,.62,2.3,wall,scene,-4.07,.31,0);
+box(.14,.33,2.3,wall,scene,-4.07,3.085,0);
+for(const x of [-3.985,3.985]) box(.045,.14,8,trim,scene,x,.07,0);
+for(const z of [-3.985,3.985]) box(8,.14,.045,trim,scene,0,.07,z);
+
+// 外の夕空。
+const skyTexture=canvasTexture((c,s)=>{
+  const g=c.createLinearGradient(0,0,0,s);
+  g.addColorStop(0,'#233c62');g.addColorStop(.58,'#8ba1b0');
+  g.addColorStop(1,'#dec2a4');c.fillStyle=g;c.fillRect(0,0,s,s);
+  for(let i=0;i<26;i++){
+    const x=random()*s,h=30+random()*100;
+    c.fillStyle=i%2?'#485969':'#566473';c.fillRect(x,s-h,20+random()*40,h);
+  }
+});
+const sky=mesh(new THREE.PlaneGeometry(4,4),new THREE.MeshBasicMaterial({map:skyTexture}),scene,-4.6,1.8,0);
+sky.rotation.y=Math.PI/2;
+
+const windowFrame=group();
+windowFrame.position.set(-3.99,1.76,0);windowFrame.rotation.y=Math.PI/2;
+for(const x of [-1.16,1.16]) box(.075,2.38,.11,trim,windowFrame,x,0,0);
+for(const y of [-1.17,1.17]) box(2.4,.075,.11,trim,windowFrame,0,y,0);
+box(.055,2.3,.08,trim,windowFrame);
+box(2.3,.045,.08,trim,windowFrame,0,.15,0);
+box(2.5,.055,.27,trim,windowFrame,0,-1.19,.07);
+mesh(new THREE.PlaneGeometry(2.27,2.26),new THREE.MeshPhysicalMaterial({
+  color:'#d6e4e8',transparent:true,opacity:.16,roughness:.08,
+  metalness:.08,side:THREE.DoubleSide,depthWrite:false
+}),windowFrame,0,0,-.04);
+
+// カーテン。裾ほどよく揺れ、複数の非同期の波で周期感を薄める。
+const curtainMat=material('#e8dfc7',.98,0,{
+  map:tiled(weaveTexture,5,7),bumpMap:tiled(weaveTexture,5,7),bumpScale:.007,
+  side:THREE.DoubleSide
+});
+const curtains=[];
+for(const side of [-1,1]){
+  const geo=new THREE.PlaneGeometry(.84,2.38,30,44);
+  const m=mesh(geo,curtainMat,scene,-3.77,1.69,side*.88);
+  m.rotation.y=Math.PI/2;
+  curtains.push({m,base:new Float32Array(geo.attributes.position.array),side});
+}
+cylinder(.021,.021,2.9,steel,scene,-3.69,2.98,0).rotation.x=Math.PI/2;
+for(let i=0;i<18;i++){
+  const z=-1.3+i*2.6/17;
+  const ring=mesh(new THREE.TorusGeometry(.035,.006,8,20),steel,scene,-3.69,2.96,z);
+  // トーラスの穴をカーテンレールの軸に合わせる。
+  ring.rotation.y=0;
+}
+
+// 天井灯。
+const ceilingLightBody=group();
+ceilingLightBody.position.set(0,3.18,-.15);
+cylinder(.34,.4,.07,plastic,ceilingLightBody);
+const diffuserMat=new THREE.MeshStandardMaterial({
+  color:'#fff1d8',roughness:.56,emissive:'#ffe5b5',emissiveIntensity:1.2
+});
+cylinder(.37,.37,.025,diffuserMat,ceilingLightBody,0,-.046,0);
+cylinder(.09,.09,.06,steel,ceilingLightBody,0,.06,0);
+
+const mainLight=new THREE.PointLight('#fff0d3',38,12,2);
+mainLight.position.set(0,2.93,-.15);
+mainLight.castShadow=true;
+mainLight.shadow.mapSize.set(1024,1024);
+mainLight.shadow.bias=-.00045;
+mainLight.shadow.normalBias=.025;
+mainLight.shadow.camera.near=.1;
+mainLight.shadow.camera.far=13;
+scene.add(mainLight);
+
+const fillLight=new THREE.HemisphereLight('#b4c9e0','#423222',.23);
+scene.add(fillLight);
+const windowLight=new THREE.SpotLight('#b7d0f2',32,13,.76,.72,1.8);
+windowLight.position.set(-3.75,2.5,0);
+windowLight.target.position.set(1,.25,.8);
+windowLight.castShadow=true;
+windowLight.shadow.mapSize.set(1024,1024);
+windowLight.shadow.normalBias=.025;
+scene.add(windowLight,windowLight.target);
+
+// ドアと金具。
+const doorGroup=group();
+doorGroup.position.set(3.975,0,2.5);
+doorGroup.rotation.y=-Math.PI/2;
+for(const x of [-.55,.55]) box(.09,2.45,.11,trim,doorGroup,x,1.225,0);
+box(1.19,.09,.11,trim,doorGroup,0,2.44,0);
+box(1.02,2.35,.055,darkWood,doorGroup,0,1.19,0);
+for(const y of [.65,1.72]){
+  box(.78,.78,.015,wood,doorGroup,0,y,.038);
+  for(const x of [-.405,.405]) box(.025,.84,.025,darkWood,doorGroup,x,y,.054);
+  for(const dy of [-.415,.415]) box(.84,.025,.025,darkWood,doorGroup,0,y+dy,.054);
+}
+const doorPlate=box(.07,.21,.018,steel,doorGroup,-.38,1.15,.048);
+const doorHandle=cylinder(.017,.017,.16,steel,doorGroup,-.32,1.17,.102);
+doorHandle.rotation.z=Math.PI/2;
+actionable(doorPlate,'ドアを調べる',()=>toast('今は、部屋の中のスターを探そう。'));
+actionable(doorHandle,'ドアを調べる',()=>toast('今は、部屋の中のスターを探そう。'));
+for(const y of [.35,1.9]) cylinder(.013,.013,.11,brass,doorGroup,.51,y,.055);
+
+// プラスチックの照明スイッチ。
+const switchGroup=group();
+switchGroup.position.set(3.965,1.4,.99);
+switchGroup.rotation.y=-Math.PI/2;
+box(.16,.235,.025,plastic,switchGroup);
+const rocker=box(.089,.142,.023,plastic,switchGroup,0,0,.021);
+for(const y of [-.096,.096]){
+  const screw=cylinder(.008,.008,.003,steel,switchGroup,0,y,.014,16);
+  screw.rotation.x=Math.PI/2;
+  box(.009,.0018,.002,black,switchGroup,0,y,.017);
+}
+const led=material('#6c9779',.3,0,{emissive:'#50805e',emissiveIntensity:.5});
+box(.016,.004,.002,led,switchGroup,0,-.052,.035);
+
+actionable(switchGroup,'照明スイッチ：ON / OFF',()=>{
+  roomLightOn=!roomLightOn;
+  if(!roomLightOn) lightOffAge=0;
+  animateTo(rocker.rotation,{x:roomLightOn?-.12:.12},.12);
+  toast(roomLightOn?'パチッ。部屋の照明をつけた。':'暖かな余韻を残して、照明が消えていく。',1900);
+});
+
+// 机。
+const desk=group();
+desk.position.set(-2.55,0,-2.9);
+box(2.2,.085,1.06,wood,desk,0,.88,0);
+for(const x of [-.96,.96]) for(const z of [-.39,.39]){
+  box(.085,.84,.085,darkWood,desk,x,.42,z);
+  box(.09,.018,.09,black,desk,x,.009,z);
+}
+box(2,.18,.065,wood,desk,0,.73,-.43);
+box(.065,.2,.88,wood,desk,-1.01,.73,0);
+box(.065,.2,.88,wood,desk,1.01,.73,0);
+
+// 開閉する引き出し。
+const drawer=group(desk);
+drawer.position.set(.05,.70,0);
+box(.98,.035,.84,wood,drawer,0,-.09,0);
+for(const x of [-.49,.49]) box(.03,.16,.84,wood,drawer,x,-.018,0);
+box(1,.16,.035,wood,drawer,0,-.018,-.405);
+box(1.05,.21,.052,wood,drawer,0,0,.444);
+box(.27,.03,.048,brass,drawer,0,0,.496);
+actionable(drawer,'引き出しを開ける / 閉める',()=>{
+  drawerOpen=!drawerOpen;
+  animateTo(drawer.position,{z:drawerOpen?.77:0},.72);
+  if(drawerOpen) toast('引き出しの中に、印刷された紙が入っている。');
+});
+for(const x of [-.52,.52]) box(.012,.025,.83,steel,desk,x+.05,.64,.03);
+
+const memo=`これは架空の開発メモです。部屋を作った「開発者」という登場人物の、どうでもいい愚痴が印刷されています。
+
+正直に書く。この部屋のコード書くの、だるかった。最初は「机を置いて、星を隠せば完成だな」と思っていた。どうして机の木目の向きと、引き出しの内側の板の厚みについて、こんなに真剣になる必要があったんだろう。星を探すゲームなのに、気がつけば木材のことを考えている。
+
+本もそうだ。四角い箱を積めば本に見えると思った。ところが、表紙には厚みが必要で、紙の断面には細い線が必要で、背表紙には文字が必要だった。誰だ、本を小物と呼んだのは。小物の顔をした大仕事じゃないか。しかも、その本をどかせるようにした。机の上を片付ける機能まで作るとは聞いていない。いや、聞いていた。
+
+照明はもっとひどい。「消す」とは、明るさをゼロにすることだと信じていた。でも、それでは味気ない。ほんの一瞬、部屋が淡い暖色に包まれて、それから余熱みたいに光が抜けていく。その一瞬のために、色と明るさを別々に動かしている。誰か、このこだわりを褒めてほしい。スイッチを十回ぐらい押してもいい。ただし、目は大切にしてほしい。
+
+カーテンは、そよそよしていればいいわけではなかった。全部が同じ周期で動くと、風というより体操になる。上の方はほとんど止めて、裾だけ少し遅らせて、違う速さの波を重ねた。布の陰影を見ているうちに、星のことを忘れそうになった。もうカーテン鑑賞ゲームでよくないか。よくない。
+
+クローゼットを開けたら服がある。当たり前だ。けれど、この世界の当たり前は、全部こちらで配置しなければ存在しない。ハンガーの曲がったフック、服の襟、ポケット、縫い目。さらに一枚ずつ床に置ける。片付いた部屋を作るのに苦労して、散らかす機能にも苦労している。これはいったい何の循環なんだろう。
+
+ベッドの下も作った。普通なら見えない場所だ。でも潜れる以上、見えないという言い訳はできない。すのこ、脚、少しの埃。低い視点になると、いつもの部屋が妙に広く感じる。そこだけは、ちょっと気に入っている。床に近い空気まで想像してもらえたら、苦労した意味がある。
+
+そしてポーチ。茶色い入れ物、と一言で済ませられるのが本当にずるい。革の粒、縫い糸、端のパイピング、金属の留め金。回せるということは、裏も作るということだ。裏側を見た人には、心の中で小さく拍手を送ることにする。これは開発者役の台詞なので、実際にどこかで拍手が発生するわけではない。
+
+最後に、アクリル。ガラスほど冷たくなく、プラスチックという言葉だけでは説明しきれない、透明な厚み。星の縁に光が集まるところだけは、雑にしたくなかった。たぶん、この部屋は、その小さな光のためにある。
+
+……というわけで、愚痴はここまで。紙には星の場所を直接は書かない。ただ、探し物が見つからないときは、普段より少し目線を下げるといい。机の上ばかり見ていても、見えないものはある。
+
+追伸。この長文を印刷して引き出しにしまったのは誰なんだろう。そこは、あまり深く考えないでほしい。`;
+
+$('#paperText').textContent=memo;
+
+function wrapText(ctx,text,maxWidth){
+  const lines=[];
+  for(const paragraph of text.split('\n')){
+    let line='';
+    for(const ch of paragraph){
+      if(ctx.measureText(line+ch).width>maxWidth && line){
+        lines.push(line);line=ch;
+      }else line+=ch;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+const paperTexture=canvasTexture((c,s)=>{
+  c.fillStyle='#ece7d7';c.fillRect(0,0,s,s);
+  for(let i=0;i<9000;i++){
+    c.fillStyle='#6a563408';c.fillRect(random()*s,random()*s,1,1);
+  }
+  c.fillStyle='#6a6a5d';c.font='13px monospace';
+  c.fillText('PRIVATE / DEVELOPMENT MEMO',65,65);
+  c.fillStyle='#33352e';c.font='bold 28px sans-serif';
+  c.fillText('この部屋のコードについて',65,120);
+  c.fillRect(65,145,s-130,1);
+  c.font='15px sans-serif';
+  const lines=wrapText(c,memo,s-130);
+  lines.slice(0,41).forEach((l,i)=>c.fillText(l,65,180+i*19));
+  c.font='13px sans-serif';c.fillStyle='#737160';
+  c.fillText('クリックして全文を読む / 01',65,s-40);
+},1024);
+const paper=mesh(new THREE.PlaneGeometry(.76,.66),
+  material('#ffffff',.95,0,{map:paperTexture}),drawer,0,-.070,.015);
+paper.rotation.x=-Math.PI/2;
+actionable(paper,'印刷された開発メモを読む',()=>{
+  if(!drawerOpen)return;
+  paperVisible=true;$('#paperModal').style.display='block';
+});
+$('#closePaper').onclick=()=>{
+  paperVisible=false;$('#paperModal').style.display='none';
+};
+
+// 表紙・ページ・背を持つ本。
+function makeBook(title,subtitle,color,w,d,h,index){
+  const g=group(desk);
+  const coverTexture=canvasTexture((c,s)=>{
+    c.fillStyle=color;c.fillRect(0,0,s,s);
+    for(let i=0;i<12000;i++){
+      c.fillStyle=random()>.5?'#ffffff09':'#00000009';
+      c.fillRect(random()*s,random()*s,1,1);
+    }
+    c.strokeStyle='#efe0b280';c.lineWidth=2;c.strokeRect(37,37,s-74,s-74);
+    c.fillStyle='#ede4c9';c.font='24px serif';c.fillText(subtitle,65,130);
+    c.font='bold 48px serif';
+    wrapText(c,title,s-125).forEach((t,i)=>c.fillText(t,65,225+i*64));
+    c.font='18px serif';c.fillText('STUDIO / FIELD NOTES',65,s-70);
+    c.fillStyle='#0002';c.fillRect(0,0,18,s);
+    c.fillStyle='#fff1';c.fillRect(18,0,3,s);
+    for(let i=0;i<160;i++){
+      c.fillStyle='#e4d8bc35';
+      c.fillRect(random()*s,random()>.5?random()*5:s-random()*5,2,1);
+    }
+  });
+  const coverMat=material(color,.64);
+  box(w,h-.016,d,material('#fff9e8',.9,0,{map:pagesTexture}),g);
+  for(const y of [-h/2,h/2]) box(w+.014,.009,d+.017,coverMat,g,0,y,0);
+  const front=mesh(new THREE.PlaneGeometry(w+.014,d+.017),
+    material('#ffffff',.63,0,{map:coverTexture}),g,0,h/2+.005,0);
+  front.rotation.x=-Math.PI/2;
+  box(.016,h,d+.017,coverMat,g,-w/2,0,0);
+  const spineTexture=canvasTexture((c,s)=>{
+    c.fillStyle=color;c.fillRect(0,0,s,s);
+    c.fillStyle='#e7dabe';c.font='bold 46px serif';
+    c.save();c.translate(s/2,s/2);c.rotate(Math.PI/2);
+    c.fillText(title,-s*.38,16);c.restore();
+  });
+  const spine=mesh(new THREE.PlaneGeometry(d,h),
+    material('#ffffff',.65,0,{map:spineTexture}),g,-w/2-.009,0,0);
+  spine.rotation.y=-Math.PI/2;
+  let moved=false;
+  const home=new THREE.Vector3(-.40+index*.045,.965+index*.068,-.07+index*.025);
+  g.position.copy(home);g.rotation.y=-.08+index*.09;
+  actionable(g,`「${title}」をどかす / 戻す`,()=>{
+    moved=!moved;
+    const to=moved?
+      {x:.60-index*.32,y:.95+index*.007,z:-.22+index*.23}:
+      {x:home.x,y:home.y,z:home.z};
+    animateTo(g.position,{y:g.position.y+.16},.18,()=>{
+      animateTo(g.position,to,.48);
+    });
+    animateTo(g.rotation,{y:moved?.18-index*.18:-.08+index*.09},.55);
+  });
+  return g;
+}
+makeBook('光と素材','LIGHT & MATERIAL','#405860',.44,.61,.064,0);
+makeBook('静かな部屋','LIVING / VOL. 08','#936957',.42,.58,.061,1);
+makeBook('余白の記録','A SMALL COLLECTION','#7c8065',.40,.55,.056,2);
+
+// スマートフォン。
+const phone=group(desk);
+phone.position.set(.63,.944,.23);phone.rotation.y=-.17;
+box(.205,.021,.397,material('#25292c',.3,.3),phone);
+box(.188,.004,.379,material('#05090c',.12,.15),phone,0,.013,0);
+const phoneTexture=canvasTexture((c,s)=>{
+  const gr=c.createLinearGradient(0,0,s,s);
+  gr.addColorStop(0,'#182d3c');gr.addColorStop(.5,'#536d74');gr.addColorStop(1,'#a08c76');
+  c.fillStyle=gr;c.fillRect(0,0,s,s);
+  c.fillStyle='#f2f3e9';c.textAlign='center';
+  c.font='70px sans-serif';c.fillText('18:42',s/2,145);
+  c.font='20px sans-serif';c.fillText('金曜日 · 夕暮れ',s/2,182);
+  c.fillStyle='#ffffff32';c.fillRect(45,285,s-90,85);
+  c.font='18px sans-serif';c.fillStyle='#fff';
+  c.fillText('通知はありません',s/2,334);
+  c.fillStyle='#0a1014';c.beginPath();c.roundRect(s/2-45,13,90,17,10);c.fill();
+  c.fillStyle='#ffffff80';c.fillRect(s/2-55,s-22,110,5);
+});
+const screen=mesh(new THREE.PlaneGeometry(.179,.357),
+  new THREE.MeshPhysicalMaterial({
+    map:phoneTexture,roughness:.14,metalness:.05,
+    clearcoat:1,emissive:'#b9d7e6',emissiveMap:phoneTexture,emissiveIntensity:.25
+  }),phone,0,.016,0);
+screen.rotation.x=-Math.PI/2;
+box(.003,.008,.045,steel,phone,.104,0,.07);
+box(.003,.008,.065,steel,phone,-.104,0,.04);
+let phoneMoved=false;
+actionable(phone,'スマートフォンをどかす / 戻す',()=>{
+  phoneMoved=!phoneMoved;
+  animateTo(phone.position,{x:phoneMoved?-.82:.63,z:phoneMoved?.24:.23,y:.944},.55);
+  animateTo(phone.rotation,{y:phoneMoved?.35:-.17},.55);
+});
+
+// デスクランプ。
+const lamp=group(desk);lamp.position.set(-.83,.93,-.30);
+cylinder(.135,.15,.027,black,lamp);
+cylinder(.014,.014,.37,steel,lamp,0,.2,0);
+tube([[0,.36,0],[0,.50,0],[.12,.57,.02],[.22,.53,.06]],.014,steel,lamp);
+const shade=cylinder(.07,.15,.16,material('#48544f',.35,.22),lamp,.22,.47,.06);
+shade.rotation.z=-.25;
+const lampGlow=material('#fff2d8',.6,0,{emissive:'#ffca83',emissiveIntensity:1.5});
+cylinder(.132,.132,.007,lampGlow,lamp,.22,.388,.06);
+const deskLight=new THREE.PointLight('#ffc58b',1.15,2.7,2);
+deskLight.position.set(.22,.38,.07);lamp.add(deskLight);
+actionable(lamp,'デスクランプをつける / 消す',()=>{
+  lampOn=!lampOn;
+  deskLight.intensity=lampOn?1.15:0;
+  lampGlow.emissiveIntensity=lampOn?1.5:0;
+});
+
+// ペン立てとペン。
+const cup=cylinder(.058,.051,.13,material('#bcbdac',.38),desk,.78,.992,-.32);
+cylinder(.046,.046,.003,material('#303630',1),desk,.78,1.059,-.32);
+for(let i=0;i<5;i++){
+  const pen=cylinder(.006,.006,.22,material(['#25363b','#9d684d','#b8a77c'][i%3],.34),desk,
+    .755+(i%3)*.017,1.10,-.337+Math.floor(i/3)*.025,10);
+  pen.rotation.z=(i-2)*.12;
+}
+
+// いす。
+const chair=group();
+chair.position.set(-2.45,0,-1.65);chair.rotation.y=.13;
+for(const x of [-.25,.25]) for(const z of [-.23,.23])
+  cylinder(.024,.019,.49,darkWood,chair,x,.245,z);
+box(.62,.065,.57,wood,chair,0,.49,0);
+const seat=box(.55,.06,.51,fabric,chair,0,.55,0);
+for(const x of [-.265,.265]) box(.045,.58,.045,wood,chair,x,.76,.245);
+box(.58,.31,.06,wood,chair,0,.93,.245);
+let chairMoved=false;
+actionable(chair,'いすを引く / 戻す',()=>{
+  chairMoved=!chairMoved;
+  animateTo(chair.position,{z:chairMoved?-.83:-1.65},.65);
+  animateTo(chair.rotation,{y:chairMoved?.32:.13},.65);
+});
+
+// ゴミ箱。中空の側面とリム。
+const trash=group();trash.position.set(-3.43,0,-1.85);
+const trashMat=material('#6b7775',.45,.08);
+mesh(new THREE.CylinderGeometry(.19,.145,.37,40,1,true),trashMat,trash,0,.195,0);
+cylinder(.145,.145,.015,trashMat,trash,0,.017,0);
+const trashRim=mesh(new THREE.TorusGeometry(.19,.012,10,48),trashMat,trash,0,.38,0);
+trashRim.rotation.x=Math.PI/2;
+const trashInside=material('#2b3433',.96);
+cylinder(.173,.173,.006,trashInside,trash,0,.13,0);
+for(let i=0;i<5;i++){
+  const p=mesh(new THREE.DodecahedronGeometry(.063,1),material('#d9d5c4',1),trash,
+    (random()-.5)*.19,.19+random()*.065,(random()-.5)*.17);
+  p.rotation.set(random()*3,random()*3,random()*3);
+}
+let trashMoved=false;
+actionable(trash,'ゴミ箱を少しどかす / 戻す',()=>{
+  trashMoved=!trashMoved;
+  animateTo(trash.position,{x:trashMoved?-3.12:-3.43,z:trashMoved?-1.23:-1.85},.6);
+});
+
+// クローゼット。
+const wardrobe=group();wardrobe.position.set(.12,0,-3.43);
+const cw=1.72,ch=2.53,cd=.87;
+box(cw,.10,cd,darkWood,wardrobe,0,.075,0);
+box(cw,.09,cd,wood,wardrobe,0,ch,0);
+box(cw,ch,.055,darkWood,wardrobe,0,ch/2,-cd/2);
+for(const x of [-cw/2,cw/2]) box(.065,ch,cd,wood,wardrobe,x,ch/2,0);
+box(cw-.1,.035,cd-.06,wood,wardrobe,0,2.27,0);
+const rod=cylinder(.014,.014,cw-.14,steel,wardrobe,0,2.095,.02);
+rod.rotation.z=Math.PI/2;
+
+// 上段の収納箱。
+box(.59,.20,.54,fabric,wardrobe,-.37,2.395,-.03);
+box(.62,.035,.57,trim,wardrobe,-.37,2.49,-.03);
+box(.52,.15,.53,material('#7c8277',.95),wardrobe,.31,2.37,-.03);
+
+const leftDoor=group(wardrobe),rightDoor=group(wardrobe);
+leftDoor.position.set(-cw/2,0,cd/2+.025);
+rightDoor.position.set(cw/2,0,cd/2+.025);
+for(const [g,sign] of [[leftDoor,1],[rightDoor,-1]]){
+  box(cw/2-.025,ch-.1,.047,wood,g,sign*cw/4,ch/2+.02,0);
+  for(const y of [.39,2.12]){
+    box(.12,.047,.029,brass,g,sign*.02,y,-.025);
+  }
+  const handle=cylinder(.013,.013,.18,brass,g,sign*(cw/2-.11),1.22,.052);
+  for(const y of [1.15,1.29]) box(.026,.024,.056,brass,g,sign*(cw/2-.11),y,.026);
+  actionable(g,'クローゼットを開ける / 閉める',()=>{
+    closetOpen=!closetOpen;
+    animateTo(leftDoor.rotation,{y:closetOpen?-1.83:0},.95);
+    animateTo(rightDoor.rotation,{y:closetOpen?1.83:0},.95);
+    if(closetOpen) toast('服とハンガーは、それぞれクリックして床に置ける。',3500);
+  });
+}
+const floorSlots=[];
+for(let i=0;i<8;i++) floorSlots.push(new THREE.Vector3(
+  -.85+(i%4)*.48,.075+Math.floor(i/4)*.02,-.35+Math.floor(i/4)*.7
+));
+let droppedCount=0;
+
+function layOnFloor(obj,label){
+  if(!closetOpen && !obj.userData.removed)return;
+  if(obj.userData.removed){
+    toast(`${label}は床に置いてある。`);return;
+  }
+  obj.userData.removed=true;
+  scene.attach(obj);
+  const p=floorSlots[droppedCount++%floorSlots.length];
+  animateTo(obj.position,{x:p.x,y:p.y,z:p.z},.85);
+  animateTo(obj.rotation,{x:-Math.PI/2,y:0,z:(random()-.5)*.8},.85);
+  toast(`${label}を床に置いた。`,1700);
+}
+function makeHanger(x,i){
+  const h=group(wardrobe);h.position.set(x,1.96,.12);
+  const hm=i%2?steel:material('#906442',.42,0,{map:woodTexture});
+  tube([[-.185,-.09,0],[-.10,-.04,0],[0,.025,0],[.10,-.04,0],[.185,-.09,0]],.012,hm,h);
+  tube([[-.18,-.095,0],[0,-.11,0],[.18,-.095,0]],.009,hm,h);
+  tube([[0,.018,0],[0,.07,0],[-.013,.091,0],[-.016,.12,0],
+    [.009,.137,0],[.029,.118,0],[.026,.097,0]],.006,steel,h);
+  actionable(h,`ハンガー ${i+1} を床に置く`,()=>layOnFloor(h,`ハンガー ${i+1}`));
+}
+function makeGarment(x,i){
+  const g=group(wardrobe);g.position.set(x,1.9,.125);
+  const colors=['#60767b','#a2927a','#555e6e','#96766b'];
+  const cloth=material(colors[i],.98,0,{
+    map:tiled(weaveTexture,2,3),bumpMap:tiled(weaveTexture,2,3),bumpScale:.007,
+    side:THREE.DoubleSide
+  });
+  const long=i%2===1, bottom=long?-.92:-.70;
+  const s=new THREE.Shape();
+  s.moveTo(-.068,.012);s.lineTo(-.18,-.045);
+  s.lineTo(-.27,-.24);s.lineTo(-.19,-.30);
+  s.lineTo(-.148,-.21);s.lineTo(-.16,bottom);
+  s.quadraticCurveTo(0,bottom-.025,.16,bottom);
+  s.lineTo(.148,-.21);s.lineTo(.19,-.30);
+  s.lineTo(.27,-.24);s.lineTo(.18,-.045);s.lineTo(.068,.012);
+  s.quadraticCurveTo(0,-.068,-.068,.012);
+  const geom=new THREE.ExtrudeGeometry(s,{
+    depth:.028,bevelEnabled:true,bevelThickness:.008,bevelSize:.01,bevelSegments:2,steps:1
+  });
+  mesh(geom,cloth,g,0,0,-.02);
+  const seam=material(colors[i],1);
+  seam.color.multiplyScalar(.68);
+  tube([[-.153,-.23,.019],[-.15,-.47,.025],[-.157,bottom+.027,.02]],.0018,seam,g);
+  tube([[.153,-.23,.019],[.15,-.49,.025],[.157,bottom+.027,.02]],.0018,seam,g);
+  tube([[-.153,bottom+.025,.026],[0,bottom+.016,.033],[.153,bottom+.025,.026]],.002,seam,g);
+  tube([[-.064,0,.028],[0,-.049,.035],[.064,0,.028]],.009,cloth,g);
+  // ポケット。
+  box(.075,.095,.006,cloth,g,-.079,-.225,.023);
+  tube([[-.116,-.187,.029],[-.116,-.272,.029],[-.041,-.272,.029],[-.041,-.187,.029]],.0015,seam,g);
+  if(long){
+    tube([[0,-.045,.032],[.005,-.43,.043],[0,bottom+.015,.033]],.003,seam,g);
+    for(let j=0;j<6;j++) sphere(.007,plastic,g,0,-.14-j*.115,.04);
+  }
+  // 正面に細く柔らかな起伏を追加。
+  for(let j=0;j<3;j++){
+    const fx=-.10+j*.095;
+    tube([[fx,-.30,.009],[fx+.013,-.44,.019],[fx-.008,bottom+.05,.01]],.005,cloth,g);
+  }
+  actionable(g,`服 ${i+1} を床に置く`,()=>layOnFloor(g,`服 ${i+1}`));
+}
+for(let i=0;i<4;i++){
+  const x=-.59+i*.395;
+  makeGarment(x,i);
+  makeHanger(x,i);
+}
+
+// ベッド。下に潜ったとき、すのこや支持材が見える。
+const bed=group();bed.position.set(2.29,0,-1.32);
+for(const x of [-.86,.86]) for(const z of [-1.39,1.39])
+  box(.11,.56,.11,darkWood,bed,x,.28,z);
+for(const x of [-.96,.96]) box(.10,.19,3.13,wood,bed,x,.59,0);
+for(const z of [-1.52,1.52]) box(1.92,.19,.10,wood,bed,0,.59,z);
+box(.08,.08,3,wood,bed,0,.50,0);
+for(let i=0;i<15;i++) box(1.85,.042,.105,wood,bed,0,.58,-1.4+i*.2);
+box(2.03,.95,.095,wood,bed,0,.75,-1.58);
+for(const x of [-.9,.9]) box(.075,1.25,.09,darkWood,bed,x,.625,-1.58);
+
+const mattressMat=material('#d8d2bd',.99,0,{
+  map:tiled(weaveTexture,4,5),bumpMap:tiled(weaveTexture,4,5),bumpScale:.009
+});
+box(1.84,.23,2.98,mattressMat,bed,0,.755,0);
+tube([[-.92,.81,-1.47],[.92,.81,-1.47],[.92,.81,1.47],[-.92,.81,1.47]],.012,
+  material('#e0dbc9',1),bed,true);
+
+const blanketMat=material('#607c7c',1,0,{
+  map:tiled(weaveTexture,5,7),bumpMap:tiled(weaveTexture,5,7),bumpScale:.012,side:THREE.DoubleSide
+});
+const blanketGeo=new THREE.PlaneGeometry(2.10,2.19,45,45);
+{
+  const p=blanketGeo.attributes.position;
+  for(let i=0;i<p.count;i++){
+    const x=p.getX(i),y=p.getY(i);
+    const drape=Math.max(0,Math.abs(x)-.88)*1.55;
+    p.setZ(i,.015*Math.sin(x*22+y*5)+.008*Math.sin(y*28+x*7)-drape);
+  }
+  blanketGeo.computeVertexNormals();
+}
+const blanket=mesh(blanketGeo,blanketMat,bed,0,.891,.42);
+blanket.rotation.x=-Math.PI/2;
+
+// 段差を押さえた丸い枕。
+for(const x of [-.45,.45]){
+  const pillow=mesh(new THREE.SphereGeometry(1,40,24),fabric,bed,x,.96,-.98);
+  pillow.scale.set(.42,.12,.29);pillow.rotation.y=x*.08;
+  const seam=mesh(new THREE.TorusGeometry(1,.009,7,64),material('#b7ae94',1),bed,x,.96,-.98);
+  seam.rotation.x=Math.PI/2;seam.scale.set(.41,.29,1);
+}
+
+// ベッド脇のラグ。
+const rug=box(1.2,.018,2.55,material('#8d8b7b',1,0,{
+  map:tiled(weaveTexture,4,8),bumpMap:tiled(weaveTexture,4,8),bumpScale:.009
+}),scene,1.03,.013,-.50);
+for(let i=0;i<38;i++){
+  for(const z of [-1.805,.805]){
+    box(.004,.004,.06,stitchMat,scene,.46+i*.031,.022,z);
+  }
+}
+
+// 小さな巾木沿いの埃。ベッド下からだけ気づく程度。
+const dustGeo=new THREE.BufferGeometry();
+const dustArray=[];
+for(let i=0;i<180;i++){
+  dustArray.push(1.38+random()*1.85,.018,-2.65+random()*2.8);
+}
+dustGeo.setAttribute('position',new THREE.Float32BufferAttribute(dustArray,3));
+scene.add(new THREE.Points(dustGeo,new THREE.PointsMaterial({
+  color:'#a89a81',size:.008,transparent:true,opacity:.27,sizeAttenuation:true
+})));
+
+// アクリルの星。厚み、面取り、透過、屈折率を持つ。
+function createStar(parent){
+  const starShape=new THREE.Shape();
+  for(let i=0;i<10;i++){
+    const a=Math.PI/2+i*Math.PI/5;
+    const r=i%2?.127:.285;
+    const x=Math.cos(a)*r,y=Math.sin(a)*r;
+    i?starShape.lineTo(x,y):starShape.moveTo(x,y);
+  }
+  starShape.closePath();
+  const hole=new THREE.Path();
+  hole.absarc(0,.213,.015,0,TAU,true);
+  starShape.holes.push(hole);
+  const geo=new THREE.ExtrudeGeometry(starShape,{
+    depth:.058,bevelEnabled:true,bevelSegments:4,
+    bevelThickness:.009,bevelSize:.007,curveSegments:24,steps:1
+  });
+  geo.translate(0,0,-.029);
+  const acrylic=new THREE.MeshPhysicalMaterial({
+    color:'#b6e8e2',metalness:0,roughness:.065,
+    transmission:.96,thickness:.11,ior:1.49,
+    attenuationColor:'#60cbc5',attenuationDistance:.75,
+    clearcoat:1,clearcoatRoughness:.07,envMapIntensity:1.75
+  });
+  const star=mesh(geo,acrylic,parent);
+  const edge=new THREE.LineSegments(new THREE.EdgesGeometry(geo,28),
+    new THREE.LineBasicMaterial({color:'#d8ffff',transparent:true,opacity:.19}));
+  star.add(edge);
+  return star;
+}
+function roundedShape(w,h,r){
+  const s=new THREE.Shape(),x=-w/2;
+  s.moveTo(x+r,0);s.lineTo(x+w-r,0);
+  s.quadraticCurveTo(x+w,0,x+w,r);s.lineTo(x+w,h-r);
+  s.quadraticCurveTo(x+w,h,x+w-r,h);s.lineTo(x+r,h);
+  s.quadraticCurveTo(x,h,x,h-r);s.lineTo(x,r);
+  s.quadraticCurveTo(x,0,x+r,0);return s;
+}
+const pouchLabelTexture=canvasTexture((c,s)=>{
+  c.fillStyle='#765034';c.fillRect(0,0,s,s);
+  c.strokeStyle='#ad875360';c.lineWidth=4;c.strokeRect(18,130,s-36,250);
+  c.fillStyle='#c7a375';c.textAlign='center';
+  c.font='52px serif';c.fillText('SOUVENIR',s/2,263);
+  c.font='20px serif';c.fillText('KEEP A LITTLE LIGHT',s/2,305);
+});
+
+function createPouch(parent,interactive=false){
+  const root=group(parent);
+  const bodyShape=roundedShape(.90,.49,.10);
+  const geom=new THREE.ExtrudeGeometry(bodyShape,{
+    depth:.265,bevelEnabled:true,bevelSegments:4,
+    bevelThickness:.035,bevelSize:.03,curveSegments:16
+  });
+  geom.translate(0,0,-.1325);
+  mesh(geom,leather,root,0,.025,0);
+
+  // 前後の縁取り。
+  const seamPoints=[
+    [-.36,.06,.174],[.36,.06,.174],[.454,.12,.174],
+    [.454,.43,.174],[.36,.505,.174],[-.36,.505,.174],
+    [-.454,.43,.174],[-.454,.12,.174]
+  ];
+  tube(seamPoints,.008,darkWood,root,true);
+  tube(seamPoints.map(p=>[p[0],p[1],-.174]),.008,darkWood,root,true);
+
+  // 縫い糸を一本ずつ配置。
+  for(const z of [-.177,.177]){
+    for(let i=0;i<35;i++){
+      const x=-.385+i*.0226;
+      box(.010,.0027,.0025,stitchMat,root,x,.084,z);
+      box(.010,.0027,.0025,stitchMat,root,x,.472,z);
+    }
+    for(let i=0;i<16;i++){
+      const y=.12+i*.021;
+      box(.0027,.010,.0025,stitchMat,root,-.425,y,z);
+      box(.0027,.010,.0025,stitchMat,root,.425,y,z);
+    }
+  }
+
+  // 開口部。濃い裏地と口金。
+  box(.80,.011,.208,material('#24180f',.99),root,0,.543,0);
+  for(const z of [-.12,.12]) box(.83,.012,.017,brass,root,0,.548,z);
+  for(const x of [-.413,.413]) box(.018,.012,.25,brass,root,x,.548,0);
+
+  // フラップは、後ろ側のヒンジから上へ開く。
+  const flap=group(root);flap.position.set(0,.56,-.16);
+  box(.96,.045,.355,leather,flap,0,0,.17);
+  const flapFront=mesh(new THREE.ExtrudeGeometry(roundedShape(.94,.225,.045),{
+    depth:.029,bevelEnabled:true,bevelSize:.013,bevelThickness:.011,bevelSegments:3
+  }),leather,flap,0,-.223,.336);
+  for(let i=0;i<38;i++){
+    box(.012,.0025,.002,stitchMat,flap,-.416+i*.0225,-.199,.38);
+  }
+  for(const x of [-.434,.434]) for(let i=0;i<8;i++)
+    box(.0025,.009,.002,stitchMat,flap,x,-.18+i*.020,.379);
+
+  const label=mesh(new THREE.PlaneGeometry(.255,.115),
+    material('#ffffff',.74,0,{map:pouchLabelTexture}),root,0,.19,.178);
+
+  // 左右の金具と短い革ストラップ。
+  for(const x of [-.487,.487]){
+    const ring=mesh(new THREE.TorusGeometry(.040,.007,9,30),brass,root,x,.42,0);
+    ring.rotation.y=Math.PI/2;
+  }
+  tube([[-.487,.42,0],[-.59,.50,.025],[-.63,.38,.05],[-.58,.22,.025],[-.49,.36,0]],
+    .014,leather,root);
+  // 背面の革の継ぎ目と小さなリベット。
+  tube([[-.40,.30,-.174],[0,.28,-.179],[.40,.30,-.174]],.003,darkWood,root);
+  for(const x of [-.395,.395]) sphere(.012,brass,root,x,.423,-.182);
+
+  const latch=group(root);latch.position.set(0,.348,.201);
+  box(.106,.12,.017,brass,latch);
+  box(.065,.073,.016,material('#493c26',.33,.7),latch,0,0,.013);
+  const clasp=box(.056,.056,.027,brass,latch,0,.012,.029);
+  sphere(.010,steel,latch,0,-.031,.025);
+  for(const x of [-.037,.037]) sphere(.005,steel,latch,x,.041,.012);
+  // フラップ側の留め具。
+  box(.078,.10,.023,brass,flap,0,-.139,.395);
+
+  const star=createStar(root);
+  star.position.set(0,.34,0);star.scale.setScalar(.77);
+  star.visible=false;
+
+  if(interactive){
+    actionable(latch,'留め金を外す',()=>{
+      if(pouchOpen){toast('ポーチは開いている。中のスターをクリックしよう。');return;}
+      pouchOpen=true;
+      animateTo(clasp.rotation,{x:-.8},.22);
+      animateTo(flap.rotation,{x:-2.12},1.15);
+      star.visible=true;
+      animateTo(star.position,{y:.86,z:.04},1.35);
+      animateTo(star.rotation,{y:.24,z:-.08},1.2);
+      toast('留め金が外れた。中から、透明なスターが現れる。',3800);
+    });
+    actionable(star,'アクリルのスターを手に取る',()=>{
+      if(found)return;
+      found=true;
+      $('#objective').textContent='✓ アクリルのスターを見つけた。';
+      $('#win').style.display='grid';
+    });
+  }
+  return {root,flap,star};
+}
+
+const worldPouch=createPouch(scene,false);
+worldPouch.root.position.set(2.29,.02,-.81);
+worldPouch.root.scale.setScalar(.60);
+worldPouch.root.rotation.y=-.12;
+actionable(worldPouch.root,'茶色いポーチを手に取って調べる',()=>{
+  if(currentView!=='under'){
+    toast('ベッドの下へ潜ると、手が届きそうだ。');return;
+  }
+  enterInspect();
+});
+
+// 検査用の独立したステージ。
+const inspectPivot=group(inspectScene);
+inspectPivot.position.set(0,.08,0);
+const inspected=createPouch(inspectPivot,true);
+inspected.root.position.y=-.20;
+const inspectionFloor=mesh(new THREE.PlaneGeometry(200,200),
+  material('#253337',.95),inspectScene,0,-.30,0);
+inspectionFloor.rotation.x=-Math.PI/2;
+const inspectKey=new THREE.SpotLight('#fff0d6',38,10,.68,.6,2);
+inspectKey.position.set(-2,3.5,3);
+inspectKey.target.position.set(0,.35,0);
+inspectKey.castShadow=true;inspectKey.shadow.mapSize.set(1024,1024);
+inspectKey.shadow.normalBias=.012;
+inspectScene.add(inspectKey,inspectKey.target);
+const inspectRim=new THREE.PointLight('#9eddf4',11,8,2);
+inspectRim.position.set(1.4,1.5,-1.3);inspectScene.add(inspectRim);
+const inspectFill=new THREE.PointLight('#f3d2ae',5,8,2);
+inspectFill.position.set(-1,.5,1.8);inspectScene.add(inspectFill);
+
+function enterInspect(){
+  mode='inspect';
+  $('#nav').style.display='none';$('#back').style.display='block';
+  $('#help').textContent='ドラッグ：ポーチを360度回転 ／ ホイール・ピンチ：拡大 ／ 留め金をクリック';
+  inspectPivot.rotation.set(0,0,0);
+  inspectCamera.position.set(0,.54,2.4);
+  inspectCamera.lookAt(0,.43,0);
+  toast(pouchOpen?'ポーチは開いている。スターの縁を光にかざしてみよう。':
+    '茶色い革のポーチ。正面の金色の留め金を外せそうだ。',4200);
+}
+function exitInspect(){
+  mode='room';
+  $('#nav').style.display='flex';$('#back').style.display='none';
+  $('#help').textContent='ドラッグ：見回す ／ クリック：調べる ／ 下のボタン：移動';
+  if(pouchOpen){
+    worldPouch.flap.rotation.x=-2.12;
+    worldPouch.star.visible=!found;
+    worldPouch.star.position.y=.83;
+  }
+}
+$('#back').onclick=exitInspect;
+$('#continue').onclick=()=>{
+  $('#win').style.display='none';
+  toast('探索完了。照明を変えたり、部屋をもう少し眺めたりできる。',4000);
+};
+
+// 視点。カメラを低くするだけでなく、ベッド下への移動も行う。
+const views={
+  room:{p:[.10,1.64,3.34],t:[-.15,1.12,-2.20]},
+  desk:{p:[-1.92,1.58,-.48],t:[-2.53,.87,-2.80]},
+  closet:{p:[.16,1.56,-.58],t:[.12,1.30,-3.40]},
+  bed:{p:[1.30,1.28,1.68],t:[2.29,.72,-1.30]},
+  under:{p:[2.29,.255,1.23],t:[2.29,.23,-.83]},
+  switch:{p:[2.08,1.48,1.82],t:[3.96,1.40,.99]}
+};
+let yaw=0,pitch=0,cameraTravel=null;
+function anglesFor(pos,target){
+  const d=new THREE.Vector3(...target).sub(new THREE.Vector3(...pos)).normalize();
+  return {yaw:Math.atan2(-d.x,-d.z),pitch:Math.asin(d.y)};
+}
+function applyLook(){
+  camera.rotation.order='YXZ';
+  camera.rotation.set(pitch,yaw,0);
+}
+function gotoView(name,instant=false){
+  currentView=name;
+  const v=views[name],a=anglesFor(v.p,v.t);
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));
+  if(instant){
+    camera.position.fromArray(v.p);yaw=a.yaw;pitch=a.pitch;applyLook();
+  }else{
+    let targetYaw=a.yaw;
+    while(targetYaw-yaw>Math.PI)targetYaw-=TAU;
+    while(targetYaw-yaw<-Math.PI)targetYaw+=TAU;
+    cameraTravel={
+      start:camera.position.clone(),end:new THREE.Vector3(...v.p),
+      yaw0:yaw,yaw1:targetYaw,pitch0:pitch,pitch1:a.pitch,t:0,
+      duration:name==='under'?1.35:.95
+    };
+    if(name==='under')toast('身をかがめて、ベッドの下へ。床の近くに、茶色いものがある。',3500);
+  }
+}
+gotoView('room',true);
+document.querySelectorAll('#nav button').forEach(b=>{
+  b.onclick=()=>gotoView(b.dataset.view);
+});
+
+// レイキャスト。手前の非操作物は遮蔽物として扱う。
+const raycaster=new THREE.Raycaster();
+const pointer=new THREE.Vector2();
+function hierarchyVisible(obj){
+  for(let o=obj;o;o=o.parent) if(!o.visible)return false;
+  return true;
+}
+function pick(clientX,clientY){
+  pointer.set(clientX/innerWidth*2-1,-clientY/innerHeight*2+1);
+  raycaster.setFromCamera(pointer,mode==='inspect'?inspectCamera:camera);
+  const hits=raycaster.intersectObjects(
+    (mode==='inspect'?inspectScene:scene).children,true
+  ).filter(h=>h.object.isMesh && hierarchyVisible(h.object));
+  if(!hits.length)return null;
+  for(let o=hits[0].object;o;o=o.parent){
+    if(o.userData.action)return o;
+  }
+  return null;
+}
+let down=null,dragging=false,hovered=null;
+let lastPointer={x:innerWidth/2,y:innerHeight/2};
+const touches=new Map();
+let pinchDistance=0;
+function zoomInspect(factor){
+  const z=clamp(inspectCamera.position.z*factor,1.3,4.5);
+  inspectCamera.position.z=z;
+  inspectCamera.lookAt(0,.43,0);
+}
+renderer.domElement.addEventListener('pointerdown',e=>{
+  if(paperVisible||$('#win').style.display==='grid')return;
+  renderer.domElement.setPointerCapture(e.pointerId);
+  touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(touches.size===2){
+    const a=[...touches.values()];
+    pinchDistance=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+    dragging=true;return;
+  }
+  down={x:e.clientX,y:e.clientY,lx:e.clientX,ly:e.clientY,id:e.pointerId};
+  dragging=false;
+});
+renderer.domElement.addEventListener('pointermove',e=>{
+  lastPointer={x:e.clientX,y:e.clientY};
+  if(touches.has(e.pointerId))touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(touches.size===2 && mode==='inspect'){
+    const a=[...touches.values()],d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+    if(pinchDistance>0 && d>0)zoomInspect(pinchDistance/d);
+    pinchDistance=d;return;
+  }
+  if(!down || down.id!==e.pointerId)return;
+  const dx=e.clientX-down.lx,dy=e.clientY-down.ly;
+  if(Math.hypot(e.clientX-down.x,e.clientY-down.y)>5)dragging=true;
+  if(dragging){
+    if(mode==='inspect'){
+      inspectPivot.rotation.y+=dx*.008;
+      inspectPivot.rotation.x+=dy*.007;
+    }else{
+      cameraTravel=null;
+      yaw-=dx*.0038;
+      pitch=clamp(pitch-dy*.0038,currentView==='under'?-.43:-1.22,
+        currentView==='under'?.46:1.25);
+      applyLook();
+    }
+  }
+  down.lx=e.clientX;down.ly=e.clientY;
+});
+renderer.domElement.addEventListener('pointerup',e=>{
+  touches.delete(e.pointerId);pinchDistance=0;
+  if(down && !dragging && !paperVisible){
+    const obj=pick(e.clientX,e.clientY);
+    obj?.userData.action();
+  }
+  down=null;dragging=false;
+});
+renderer.domElement.addEventListener('pointercancel',()=>{
+  down=null;dragging=false;touches.clear();
+});
+renderer.domElement.addEventListener('wheel',e=>{
+  if(mode==='inspect'){e.preventDefault();zoomInspect(Math.exp(e.deltaY*.001));}
+},{passive:false});
+addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(paperVisible)$('#closePaper').click();
+    else if($('#win').style.display==='grid')$('#continue').click();
+    else if(mode==='inspect')exitInspect();
+    else if(currentView==='under')gotoView('bed');
+  }
+});
+
+// 少量の空中の埃。窓際の光にだけ、ほのかに見える。
+const motesGeometry=new THREE.BufferGeometry();
+const motesPosition=new Float32Array(90*3);
+for(let i=0;i<90;i++){
+  motesPosition[i*3]=-3.6+random()*3.2;
+  motesPosition[i*3+1]=.3+random()*2.5;
+  motesPosition[i*3+2]=-1.2+random()*2.4;
+}
+motesGeometry.setAttribute('position',new THREE.BufferAttribute(motesPosition,3));
+scene.add(new THREE.Points(motesGeometry,new THREE.PointsMaterial({
+  color:'#eadac0',size:.006,transparent:true,opacity:.20,depthWrite:false
+})));
+
+const warmWhite=new THREE.Color('#fff0d3');
+const afterglow=new THREE.Color('#ffb679');
+const clock=new THREE.Clock();
+let hoverAge=0;
+
+function tick(){
+  requestAnimationFrame(tick);
+  const dt=Math.min(clock.getDelta(),.05);
+  time+=dt;updateTweens(dt);
+
+  if(cameraTravel && mode==='room'){
+    const a=cameraTravel;
+    a.t+=dt;
+    const t=Math.min(1,a.t/a.duration);
+    const e=t*t*(3-2*t);
+    camera.position.lerpVectors(a.start,a.end,e);
+    yaw=lerp(a.yaw0,a.yaw1,e);pitch=lerp(a.pitch0,a.pitch1,e);
+    applyLook();
+    if(t===1)cameraTravel=null;
+  }
+
+  // 点灯は速い。消灯は先に暖色へ寄り、その後に減衰。
+  if(roomLightOn){
+    lightAmount=lerp(lightAmount,1,1-Math.exp(-dt*31));
+    mainLight.color.lerp(warmWhite,1-Math.exp(-dt*24));
+  }else{
+    lightOffAge+=dt;
+    if(lightOffAge<.15){
+      // 一瞬だけ部屋全体に残る、淡い暖色の光。
+      lightAmount=lerp(lightAmount,.78,1-Math.exp(-dt*18));
+      mainLight.color.lerp(afterglow,1-Math.exp(-dt*28));
+    }else{
+      lightAmount*=Math.exp(-dt*2.65);
+      mainLight.color.lerp(afterglow,1-Math.exp(-dt*7));
+      if(lightAmount<.001)lightAmount=0;
+    }
+  }
+  mainLight.intensity=38*lightAmount;
+  diffuserMat.emissive.copy(mainLight.color);
+  diffuserMat.emissiveIntensity=lightAmount*1.8;
+  scene.environmentIntensity=.025+.175*lightAmount;
+  fillLight.intensity=.105+.125*lightAmount;
+
+  // カーテンの縦ひだ + 低周波の揺れ + 小さな不規則なうねり。
+  for(const {m,base,side} of curtains){
+    const p=m.geometry.attributes.position;
+    for(let i=0;i<p.count;i++){
+      const x=base[i*3],y=base[i*3+1];
+      const bottom=clamp((1.19-y)/2.38,0,1);
+      const folds=.060*Math.cos(x*45)+.018*Math.cos(x*91+.3);
+      const gust=
+        Math.sin(time*.73+side*1.7)*.020+
+        Math.sin(time*1.17+x*3+side)*.013+
+        Math.sin(time*.31+2.2)*.014;
+      const flutter=Math.sin(time*1.8+x*9-y*2.4+side)*.009;
+      p.setXYZ(i,
+        x+Math.pow(bottom,1.7)*.012*Math.sin(time*.84+y*2+side),
+        y+bottom*.006*Math.sin(time*1.2+x*7),
+        folds+(gust+flutter)*Math.pow(bottom,1.3)
+      );
+    }
+    p.needsUpdate=true;m.geometry.computeVertexNormals();
+  }
+
+  const mp=motesGeometry.attributes.position;
+  for(let i=0;i<mp.count;i++){
+    mp.array[i*3]+=.0015*Math.sin(time*.3+i)*dt;
+    mp.array[i*3+1]+=.004*Math.sin(time*.4+i*2)*dt;
+  }
+  mp.needsUpdate=true;
+
+  hoverAge+=dt;
+  if(hoverAge>.09 && !down && !paperVisible){
+    hoverAge=0;
+    hovered=pick(lastPointer.x,lastPointer.y);
+    renderer.domElement.style.cursor=hovered?'pointer':'grab';
+    $('#tip').textContent=hovered?.userData.label||'';
+    $('#tip').style.opacity=hovered?'1':'0';
+  }
+  renderer.render(mode==='inspect'?inspectScene:scene,
+                  mode==='inspect'?inspectCamera:camera);
+}
+addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  camera.aspect=inspectCamera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();inspectCamera.updateProjectionMatrix();
+});
+
+// 最初のフレームを描画してから、ロード表示を外す。
+renderer.render(scene,camera);
+$('#loading').style.display='none';
+toast('小物をどかしたり、扉を開けたりしてみよう。低いところも忘れずに。',4800);
+tick();
+</script>
+</body>
+</html>
