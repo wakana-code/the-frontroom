@@ -138,6 +138,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const $ = s => document.querySelector(s);
 const TAU = Math.PI * 2;
@@ -367,7 +368,10 @@ box(8,.16,8,material('#ffffff',.51,0,{
   map:tiled(floorTexture,3,3),bumpMap:tiled(floorTexture,3,3),bumpScale:.013
 }),scene,0,-.08,0);
 box(8,3.25,.14,wall,scene,0,1.625,-4.07);
-box(.14,3.25,8,wall,scene,4.07,1.625,0);
+// 右壁に本当の開口を作る。ドアの幅は1.02m。
+box(.14,3.25,5.99,wall,scene,4.07,1.625,-1.005);
+box(.14,3.25,.99,wall,scene,4.07,1.625,3.505);
+box(.14,.89,1.02,wall,scene,4.07,2.805,2.5);
 box(8,3.25,.14,wall,scene,0,1.625,4.07);
 box(8,.12,8,material('#e5e1d6',.94),scene,0,3.31,0);
 
@@ -376,7 +380,9 @@ box(.14,3.25,2.85,wall,scene,-4.07,1.625,-2.575);
 box(.14,3.25,2.85,wall,scene,-4.07,1.625,2.575);
 box(.14,.62,2.3,wall,scene,-4.07,.31,0);
 box(.14,.33,2.3,wall,scene,-4.07,3.085,0);
-for(const x of [-3.985,3.985]) box(.045,.14,8,trim,scene,x,.07,0);
+box(.045,.14,8,trim,scene,-3.985,.07,0);
+box(.045,.14,5.99,trim,scene,3.985,.07,-1.005);
+box(.045,.14,.99,trim,scene,3.985,.07,3.505);
 for(const z of [-3.985,3.985]) box(8,.14,.045,trim,scene,0,.07,z);
 
 // 外の夕空。
@@ -454,24 +460,62 @@ windowLight.shadow.mapSize.set(1024,1024);
 windowLight.shadow.normalBias=.025;
 scene.add(windowLight,windowLight.target);
 
-// ドアと金具。
+// ドアと金具。蝶番を原点にして内側へ開く。
 const doorGroup=group();
 doorGroup.position.set(3.975,0,2.5);
 doorGroup.rotation.y=-Math.PI/2;
 for(const x of [-.55,.55]) box(.09,2.45,.11,trim,doorGroup,x,1.225,0);
 box(1.19,.09,.11,trim,doorGroup,0,2.44,0);
-box(1.02,2.35,.055,darkWood,doorGroup,0,1.19,0);
+
+const roomDoorLeaf=group(doorGroup);
+roomDoorLeaf.position.x=.51;
+const roomDoorPanel=group(roomDoorLeaf);
+roomDoorPanel.position.x=-.51;
+
+box(1.02,2.35,.055,darkWood,roomDoorPanel,0,1.19,0);
 for(const y of [.65,1.72]){
-  box(.78,.78,.015,wood,doorGroup,0,y,.038);
-  for(const x of [-.405,.405]) box(.025,.84,.025,darkWood,doorGroup,x,y,.054);
-  for(const dy of [-.415,.415]) box(.84,.025,.025,darkWood,doorGroup,0,y+dy,.054);
+  box(.78,.78,.015,wood,roomDoorPanel,0,y,.038);
+  for(const x of [-.405,.405]){
+    box(.025,.84,.025,darkWood,roomDoorPanel,x,y,.054);
+  }
+  for(const dy of [-.415,.415]){
+    box(.84,.025,.025,darkWood,roomDoorPanel,0,y+dy,.054);
+  }
 }
-const doorPlate=box(.07,.21,.018,steel,doorGroup,-.38,1.15,.048);
-const doorHandle=cylinder(.017,.017,.16,steel,doorGroup,-.32,1.17,.102);
-doorHandle.rotation.z=Math.PI/2;
-actionable(doorPlate,'ドアを調べる',()=>toast('今は、部屋の中のスターを探そう。'));
-actionable(doorHandle,'ドアを調べる',()=>toast('今は、部屋の中のスターを探そう。'));
-for(const y of [.35,1.9]) cylinder(.013,.013,.11,brass,doorGroup,.51,y,.055);
+// 廊下側にもパネルとハンドルを作る。
+for(const y of [.65,1.72]){
+  box(.78,.78,.015,wood,roomDoorPanel,0,y,-.038);
+}
+for(const side of [-1,1]){
+  box(.07,.21,.018,steel,roomDoorPanel,-.38,1.15,side*.048);
+  const handle=cylinder(.017,.017,.16,steel,roomDoorPanel,-.32,1.17,side*.102);
+  handle.rotation.z=Math.PI/2;
+}
+for(const y of [.35,1.9]){
+  cylinder(.013,.013,.11,brass,doorGroup,.51,y,.055);
+}
+
+let doorOpen=false;
+let hallwayDoorLeaf=null;
+let hallwayDoorPanel=null;
+
+function toggleRoomDoor(){
+  // 通過中のプレイヤーを扉で挟まない。
+  const atThreshold=mode==='corridor'
+    ? camera.position.x<-.70 && Math.abs(camera.position.z)<.72
+    : Math.abs(camera.position.x-3.975)<.35 &&
+      Math.abs(camera.position.z-2.5)<.72;
+  if(doorOpen && atThreshold){
+    toast('ドアから少し離れてから閉めよう。');
+    return;
+  }
+  doorOpen=!doorOpen;
+  animateTo(roomDoorLeaf.rotation,{y:doorOpen?1.72:0},.8);
+  toast(doorOpen
+    ? 'ドアが開いた。WASDで外へ出ると、左右に廊下が続いている。'
+    : 'ドアを閉めた。',2800);
+}
+actionable(roomDoorLeaf,'ドアを開ける / 閉める',toggleRoomDoor);
 
 // プラスチックの照明スイッチ。
 const switchGroup=group();
@@ -890,13 +934,14 @@ for(const x of [-.45,.45]){
   seam.rotation.x=Math.PI/2;seam.scale.set(.41,.29,1);
 }
 
-// ベッド脇のラグ。
+// ベッド脇のラグ。ベッドと一緒に再配置できるようまとめる。
+const bedAccessories=group();
 const rug=box(1.2,.018,2.55,material('#8d8b7b',1,0,{
   map:tiled(weaveTexture,4,8),bumpMap:tiled(weaveTexture,4,8),bumpScale:.009
-}),scene,1.03,.013,-.50);
+}),bedAccessories,1.03,.013,-1.32);
 for(let i=0;i<38;i++){
-  for(const z of [-1.805,.805]){
-    box(.004,.004,.06,stitchMat,scene,.46+i*.031,.022,z);
+  for(const z of [-2.625,-.015]){
+    box(.004,.004,.06,stitchMat,bedAccessories,.46+i*.031,.022,z);
   }
 }
 
@@ -907,7 +952,7 @@ for(let i=0;i<180;i++){
   dustArray.push(1.38+random()*1.85,.018,-2.65+random()*2.8);
 }
 dustGeo.setAttribute('position',new THREE.Float32BufferAttribute(dustArray,3));
-scene.add(new THREE.Points(dustGeo,new THREE.PointsMaterial({
+bedAccessories.add(new THREE.Points(dustGeo,new THREE.PointsMaterial({
   color:'#a89a81',size:.008,transparent:true,opacity:.27,sizeAttenuation:true
 })));
 
@@ -1111,15 +1156,135 @@ $('#continue').onclick=()=>{
   toast('探索完了。照明を変えたり、部屋をもう少し眺めたりできる。',4000);
 };
 
-// 視点。カメラを低くするだけでなく、ベッド下への移動も行う。
+// 家具は機能を壊さない単位でまとめる。
+// 子オブジェクトのローカル座標は変えないため、引き出しなどはそのまま動く。
+const deskLayoutRoot=group();
+const wardrobeLayoutRoot=group();
+const bedLayoutRoot=group();
+
+for(const object of [desk,chair,trash])deskLayoutRoot.attach(object);
+wardrobeLayoutRoot.attach(wardrobe);
+for(const object of [bed,bedAccessories,worldPouch.root]){
+  bedLayoutRoot.attach(object);
+}
+
+// 取り外した衣服・ハンガーは、別室に入る際に元の収納位置へ戻す。
+const wardrobeStorage=[];
+for(const object of wardrobe.children){
+  if(object===leftDoor || object===rightDoor || !object.userData.action)continue;
+  wardrobeStorage.push({
+    object,
+    position:object.position.clone(),
+    quaternion:object.quaternion.clone(),
+    scale:object.scale.clone()
+  });
+}
+
+const ROOM_COUNT=8;
+let activeRoomIndex=0;
+let corridorRoomIndex=0;
+
+function roomRandom(index){
+  let s=(0x9e3779b9 ^ Math.imul(index+1,2654435761))>>>0;
+  return ()=>{
+    s=(Math.imul(s,1664525)+1013904223)>>>0;
+    return s/4294967296;
+  };
+}
+
+function applyRoomLayout(index){
+  for(const saved of wardrobeStorage){
+    const object=saved.object;
+    // 床へ置いている途中の補間も止める。
+    for(let i=tweens.length-1;i>=0;i--){
+      if(tweens[i].obj===object.position || tweens[i].obj===object.rotation){
+        tweens.splice(i,1);
+      }
+    }
+    wardrobe.add(object);
+    object.position.copy(saved.position);
+    object.quaternion.copy(saved.quaternion);
+    object.scale.copy(saved.scale);
+    object.userData.removed=false;
+  }
+  droppedCount=0;
+
+  const roots=[deskLayoutRoot,wardrobeLayoutRoot,bedLayoutRoot];
+  for(const root of roots){
+    root.position.set(0,0,0);
+    root.rotation.set(0,0,0);
+  }
+
+  if(index!==0){
+    const rng=roomRandom(index);
+    // 各区画の中心間隔は3.9m。
+    // 最大の家具セットも半幅1.7m以内なので、区画同士は重ならない。
+    // 南東の区画はドアへのアクセスのため、必ず空ける。
+    const slots=[
+      {x:-1.95,z:-1.95,angles:[0,Math.PI/2]},
+      {x: 1.95,z:-1.95,angles:[0,-Math.PI/2]},
+      {x:-1.95,z: 1.95,angles:[Math.PI,Math.PI/2]}
+    ];
+    for(let i=slots.length-1;i>0;i--){
+      const j=Math.floor(rng()*(i+1));
+      [slots[i],slots[j]]=[slots[j],slots[i]];
+    }
+
+    const bundles=[
+      {root:deskLayoutRoot,center:new THREE.Vector3(-2.55,0,-2.03)},
+      {root:wardrobeLayoutRoot,center:new THREE.Vector3(.12,0,-3.02)},
+      {root:bedLayoutRoot,center:new THREE.Vector3(1.89,0,-1.32)}
+    ];
+
+    bundles.forEach((bundle,i)=>{
+      const slot=slots[i];
+      const angle=slot.angles[Math.floor(rng()*slot.angles.length)];
+      const rotated=bundle.center.clone().applyAxisAngle(
+        new THREE.Vector3(0,1,0),angle
+      );
+      bundle.root.rotation.y=angle;
+      bundle.root.position.set(
+        slot.x-rotated.x+(rng()-.5)*.025,
+        0,
+        slot.z-rotated.z+(rng()-.5)*.025
+      );
+    });
+  }
+
+  // 衣類の置き場所は空いている南東区画内。
+  // 長い服も互いに重なりにくい間隔で、入口の正面は避ける。
+  for(let i=0;i<floorSlots.length;i++){
+    floorSlots[i].set(
+      .72+(i%4)*.62,
+      .08,
+      1.18+Math.floor(i/4)*1.12
+    );
+  }
+  scene.updateMatrixWorld(true);
+}
+
+// 視点も家具の再配置に追従する。
 const views={
   room:{p:[.10,1.64,3.34],t:[-.15,1.12,-2.20]},
   desk:{p:[-1.92,1.58,-.48],t:[-2.53,.87,-2.80]},
-  closet:{p:[.16,1.56,-.58],t:[.12,1.30,-3.40]},
-  bed:{p:[1.30,1.28,1.68],t:[2.29,.72,-1.30]},
-  under:{p:[2.29,.255,1.23],t:[2.29,.23,-.83]},
+  closet:{p:[.16,1.56,-1.25],t:[.12,1.30,-3.40]},
+  bed:{p:[2.29,1.28,.74],t:[2.29,.72,-1.30]},
+  under:{p:[2.29,.255,.74],t:[2.29,.23,-.83]},
   switch:{p:[2.08,1.48,1.82],t:[3.96,1.40,.99]}
 };
+
+function transformedView(name){
+  const source=views[name];
+  const root=name==='desk'?deskLayoutRoot:
+    name==='closet'?wardrobeLayoutRoot:
+    (name==='bed'||name==='under')?bedLayoutRoot:null;
+  if(!root)return source;
+  root.updateWorldMatrix(true,false);
+  return {
+    p:root.localToWorld(new THREE.Vector3(...source.p)).toArray(),
+    t:root.localToWorld(new THREE.Vector3(...source.t)).toArray()
+  };
+}
 let yaw=0,pitch=0,cameraTravel=null;
 function anglesFor(pos,target){
   const d=new THREE.Vector3(...target).sub(new THREE.Vector3(...pos)).normalize();
@@ -1130,8 +1295,12 @@ function applyLook(){
   camera.rotation.set(pitch,yaw,0);
 }
 function gotoView(name,instant=false){
+  if(mode==='corridor'){
+    toast('廊下ではWASDで移動。ドアから部屋へ入ると、家具の視点ボタンを使える。');
+    return;
+  }
   currentView=name;
-  const v=views[name],a=anglesFor(v.p,v.t);
+  const v=transformedView(name),a=anglesFor(v.p,v.t);
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));
   if(instant){
     camera.position.fromArray(v.p);yaw=a.yaw;pitch=a.pitch;applyLook();
@@ -1158,7 +1327,8 @@ const movementCodes=new Set(['KeyW','KeyA','KeyS','KeyD']);
 const playerRadius=.16;
 
 function movementBlockedByUI(){
-  return mode!=='room' || paperVisible || $('#win').style.display==='grid';
+  return (mode!=='room' && mode!=='corridor') ||
+    paperVisible || $('#win').style.display==='grid';
 }
 
 addEventListener('keydown',e=>{
@@ -1185,55 +1355,74 @@ function circleIntersectsBox(x,z,rect){
   return (x-closestX)**2+(z-closestZ)**2<playerRadius**2;
 }
 
+function collidesWithDoorPanel(panel,x,z,eyeY){
+  if(!panel)return false;
+  panel.updateWorldMatrix(true,false);
+  const p=panel.worldToLocal(new THREE.Vector3(x,eyeY,z));
+  return circleIntersectsBox(p.x,p.z,{
+    minX:-.51,maxX:.51,minZ:-.075,maxZ:.075
+  });
+}
+
 function canWalkAt(x,z,eyeY){
-  if(x < -3.96+playerRadius || x > 3.96-playerRadius ||
-     z < -3.96+playerRadius || z > 3.96-playerRadius)return false;
+  if(mode==='corridor')return canWalkCorridor(x,z,eyeY);
 
-  // 床から頭の少し上までを身体として扱う。
-  // 低い視点ではベッドの横桟・マットレスの下を通れる。
+  const doorway=doorOpen && roomDoorLeaf.rotation.y>1.05 &&
+    Math.abs(z-2.5)<.51-playerRadius-.025 &&
+    x>3.55 && x<4.5;
+
+  if(z < -3.96+playerRadius || z > 3.96-playerRadius ||
+     x < -3.96+playerRadius)return false;
+  if(x>3.96-playerRadius && !doorway)return false;
+
   const headY=eyeY+.09;
-  const obstacles=[];
-  function obstacle(minX,maxX,minZ,maxZ,minY=0){
-    if(headY>minY)obstacles.push({minX,maxX,minZ,maxZ});
+  function bundleCollision(root,rectangles){
+    root.updateWorldMatrix(true,false);
+    const local=root.worldToLocal(new THREE.Vector3(x,eyeY,z));
+    return rectangles.some(rect=>
+      headY>(rect.minY||0) &&
+      circleIntersectsBox(local.x,local.z,rect)
+    );
   }
 
-  // 机と、開いた引き出し。
-  obstacle(-3.65,-1.45,-3.43,-2.37);
+  const deskObstacles=[
+    {minX:-3.65,maxX:-1.45,minZ:-3.43,maxZ:-2.37},
+    {
+      minX:chair.position.x-.35,maxX:chair.position.x+.35,
+      minZ:chair.position.z-.34,maxZ:chair.position.z+.34
+    },
+    {
+      minX:trash.position.x-.19,maxX:trash.position.x+.19,
+      minZ:trash.position.z-.19,maxZ:trash.position.z+.19
+    }
+  ];
   if(drawer.position.z>.08){
-    obstacle(-3.025,-1.975,
-      -2.9+drawer.position.z-.43,
-      -2.9+drawer.position.z+.48,.59);
+    deskObstacles.push({
+      minX:-3.025,maxX:-1.975,
+      minZ:-2.9+drawer.position.z-.43,
+      maxZ:-2.9+drawer.position.z+.48,minY:.59
+    });
   }
+  if(bundleCollision(deskLayoutRoot,deskObstacles))return false;
 
-  // クローゼット本体。
-  obstacle(-.78,1.02,-3.90,-2.94);
+  if(bundleCollision(wardrobeLayoutRoot,[
+    {minX:-.78,maxX:1.02,minZ:-3.90,maxZ:-2.94}
+  ]))return false;
 
-  // ベッドのフレームとマットレス。潜っている場合は通過可能。
-  obstacle(1.28,3.30,-2.89,.25,.49);
-  // ヘッドボードと脚は、低い視点でも避ける。
-  obstacle(1.25,3.33,-2.96,-2.84);
+  const bedObstacles=[
+    {minX:1.28,maxX:3.30,minZ:-2.89,maxZ:.25,minY:.49},
+    {minX:1.25,maxX:3.33,minZ:-2.96,maxZ:-2.84}
+  ];
   for(const lx of [-.86,.86]){
     for(const lz of [-1.39,1.39]){
-      obstacle(
-        bed.position.x+lx-.055,bed.position.x+lx+.055,
-        bed.position.z+lz-.055,bed.position.z+lz+.055
-      );
+      bedObstacles.push({
+        minX:bed.position.x+lx-.055,maxX:bed.position.x+lx+.055,
+        minZ:bed.position.z+lz-.055,maxZ:bed.position.z+lz+.055
+      });
     }
   }
+  if(bundleCollision(bedLayoutRoot,bedObstacles))return false;
 
-  // 移動させた小物・いすの位置にも追従する。
-  obstacle(
-    chair.position.x-.35,chair.position.x+.35,
-    chair.position.z-.34,chair.position.z+.34
-  );
-  obstacle(
-    trash.position.x-.19,trash.position.x+.19,
-    trash.position.z-.19,trash.position.z+.19
-  );
-
-  if(obstacles.some(rect=>circleIntersectsBox(x,z,rect)))return false;
-
-  // 開閉中の扉は、各扉のローカル座標で判定する。
   for(const [door,sign] of [[leftDoor,1],[rightDoor,-1]]){
     door.updateWorldMatrix(true,false);
     const local=door.worldToLocal(new THREE.Vector3(x,eyeY,z));
@@ -1244,6 +1433,8 @@ function canWalkAt(x,z,eyeY){
       minZ:-.035,maxZ:.078
     }))return false;
   }
+
+  if(collidesWithDoorPanel(roomDoorPanel,x,z,eyeY))return false;
   return true;
 }
 
@@ -1279,11 +1470,289 @@ function updateWalking(dt){
     }
   }
 
+  updateAreaCrossing();
+
   // 手動移動後は「固定視点にいる」という表示だけ外す。
   document.querySelectorAll('#nav button.active').forEach(b=>{
     b.classList.remove('active');
   });
 }
+
+// 廊下は直線、左折、右折、突き当たりの折り返しを持つ反復区間。
+// 区間端の直線部分で座標を巻き戻すため、曲がり角の形を保って循環する。
+const corridorScene=new THREE.Scene();
+corridorScene.background=new THREE.Color('#242b2e');
+corridorScene.environment=envRT.texture;
+corridorScene.environmentIntensity=.19;
+corridorScene.fog=new THREE.Fog('#343c3c',13,31);
+
+const HALL_CELL=.5;
+const HALL_PERIOD=32;
+const hallCells=new Set();
+const hallKey=(x,z)=>`${x},${z}`;
+
+const corridorPath=[
+  [0,-12],
+  [0,5],
+  [5,5],
+  [5,10],
+  [0,10],
+  [0,24]
+];
+
+function addHallRectangle(minX,maxX,minZ,maxZ){
+  for(let x=Math.round(minX/HALL_CELL);x<Math.round(maxX/HALL_CELL);x++){
+    for(let z=Math.round(minZ/HALL_CELL);z<Math.round(maxZ/HALL_CELL);z++){
+      hallCells.add(hallKey(x,z));
+    }
+  }
+}
+for(let i=1;i<corridorPath.length;i++){
+  const a=corridorPath[i-1],b=corridorPath[i];
+  addHallRectangle(
+    Math.min(a[0],b[0])-1,Math.max(a[0],b[0])+1,
+    Math.min(a[1],b[1])-1,Math.max(a[1],b[1])+1
+  );
+}
+
+const hallFloorParts=[],hallWallParts=[],hallTrimParts=[],hallCeilingParts=[];
+function geometryBox(parts,w,h,d,x,y,z){
+  const geometry=new THREE.BoxGeometry(w,h,d);
+  geometry.translate(x,y,z);
+  parts.push(geometry);
+}
+for(const key of hallCells){
+  const [ix,iz]=key.split(',').map(Number);
+  const x=(ix+.5)*HALL_CELL,z=(iz+.5)*HALL_CELL;
+  geometryBox(hallFloorParts,HALL_CELL,.12,HALL_CELL,x,-.06,z);
+  geometryBox(hallCeilingParts,HALL_CELL,.08,HALL_CELL,x,3.18,z);
+
+  for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    if(hallCells.has(hallKey(ix+dx,iz+dz)))continue;
+    const bx=x+dx*HALL_CELL/2;
+    const bz=z+dz*HALL_CELL/2;
+
+    // 区間端は開けたまま。プレイヤーは端より手前で巻き戻される。
+    if(dz!==0 && (bz<=-12.9 || bz>=24.9))continue;
+
+    const width=dx===0?HALL_CELL:.10;
+    const depth=dx===0?.10:HALL_CELL;
+    const isDoor=dx===-1 && Math.abs(bx+1)<.001 &&
+      z>-.5 && z<.5;
+    if(isDoor){
+      geometryBox(hallWallParts,width,.78,depth,bx,2.75,bz);
+    }else{
+      geometryBox(hallWallParts,width,3.14,depth,bx,1.57,bz);
+      geometryBox(hallTrimParts,
+        dx===0?HALL_CELL:.13,.13,
+        dx===0?.13:HALL_CELL,bx,.065,bz);
+    }
+  }
+}
+function finishMerged(parts,mat,parent){
+  const geometry=mergeGeometries(parts,false);
+  for(const part of parts)part.dispose();
+  return mesh(geometry,mat,parent);
+}
+const hallFloorMaterial=material('#bdac8b',.64,0,{
+  map:tiled(woodTexture,1,1),bumpMap:woodTexture,bumpScale:.005
+});
+finishMerged(hallFloorParts,hallFloorMaterial,corridorScene);
+finishMerged(hallWallParts,wall,corridorScene);
+finishMerged(hallTrimParts,trim,corridorScene);
+finishMerged(hallCeilingParts,material('#c8c8b9',.98),corridorScene);
+
+// ドアの向こうを隠す黒い幕は置かない。
+// 実際の通路と室内の入口部分を、互いのシーンにプレビュー表示する。
+const roomCorridorPreview=group();
+roomCorridorPreview.position.set(5,0,2.5);
+
+for(const object of corridorScene.children.slice()){
+  if(object.isMesh)roomCorridorPreview.add(object.clone());
+}
+const previewAmbient=new THREE.PointLight('#f1dbb3',3.8,8,2);
+previewAmbient.position.set(4.9,2.55,2.5);
+scene.add(previewAmbient);
+
+const hallDoorFrame=group(corridorScene);
+hallDoorFrame.position.set(-1.025,0,0);
+hallDoorFrame.rotation.y=-Math.PI/2;
+for(const x of [-.55,.55]){
+  box(.09,2.45,.11,trim,hallDoorFrame,x,1.225,0);
+}
+box(1.19,.09,.11,trim,hallDoorFrame,0,2.44,0);
+
+hallwayDoorLeaf=new THREE.Group();
+hallwayDoorLeaf.position.x=.51;
+hallDoorFrame.add(hallwayDoorLeaf);
+hallwayDoorPanel=roomDoorPanel.clone(true);
+hallwayDoorLeaf.add(hallwayDoorPanel);
+actionable(hallwayDoorLeaf,'部屋のドアを開ける / 閉める',toggleRoomDoor);
+
+// 部屋番号。戻ってきたときの目印になる。
+const roomNumberCanvas=document.createElement('canvas');
+roomNumberCanvas.width=512;
+roomNumberCanvas.height=256;
+const roomNumberTexture=new THREE.CanvasTexture(roomNumberCanvas);
+roomNumberTexture.colorSpace=THREE.SRGBColorSpace;
+const roomNumberMat=material('#ffffff',.5,0,{map:roomNumberTexture});
+const numberPlate=mesh(new THREE.PlaneGeometry(.32,.16),roomNumberMat,corridorScene,
+  -.938,1.71,-.77);
+numberPlate.rotation.y=Math.PI/2;
+
+function updateRoomNumber(){
+  const ctx=roomNumberCanvas.getContext('2d');
+  ctx.fillStyle='#343d3b';ctx.fillRect(0,0,512,256);
+  ctx.strokeStyle='#baa475';ctx.lineWidth=6;ctx.strokeRect(14,14,484,228);
+  ctx.fillStyle='#e8d8ae';ctx.textAlign='center';
+  ctx.font='22px serif';ctx.fillText('EVENING ROOM',256,68);
+  ctx.font='90px serif';
+  ctx.fillText(String(corridorRoomIndex+1).padStart(2,'0'),256,180);
+  roomNumberTexture.needsUpdate=true;
+}
+updateRoomNumber();
+
+corridorScene.add(new THREE.HemisphereLight('#d7ded4','#514432',.43));
+const hallLampMat=material('#f1e1bd',.45,0,{
+  emissive:'#ffe2a4',emissiveIntensity:1.4
+});
+const lampLocations=[
+  [0,-10],[0,-4],[0,2],[2.5,5],
+  [5,7.5],[2.5,10],[0,13],[0,19],[0,24]
+];
+for(const [x,z] of lampLocations){
+  const light=new THREE.PointLight('#ffe4b4',8.5,8.5,2);
+  light.position.set(x,2.78,z);
+  corridorScene.add(light);
+  cylinder(.16,.19,.055,brass,corridorScene,x,3.08,z);
+  cylinder(.145,.145,.035,hallLampMat,corridorScene,x,3.035,z);
+}
+
+// 扉の向こうに現在の部屋を見せる静的プレビュー。
+// 出入りの境界で実シーンへ切り替える。家具の配置は実室と一致させる。
+const corridorRoomPreview=group(corridorScene);
+corridorRoomPreview.position.set(-5,0,-2.5);
+const previewRoomLight=new THREE.PointLight('#fff0d3',38,12,2);
+previewRoomLight.position.set(-5,2.93,-2.65);
+corridorScene.add(previewRoomLight);
+
+function refreshRoomPreview(){
+  corridorRoomPreview.clear();
+  scene.updateMatrixWorld(true);
+  scene.traverse(object=>{
+    if(!object.isMesh && !object.isLineSegments && !object.isPoints)return;
+    if(!hierarchyVisible(object))return;
+    for(let parent=object;parent;parent=parent.parent){
+      if(parent===roomCorridorPreview || parent===roomDoorLeaf)return;
+    }
+    const copy=object.clone(false);
+    copy.userData={};
+    copy.matrixAutoUpdate=false;
+    copy.matrix.copy(object.matrixWorld);
+    corridorRoomPreview.add(copy);
+  });
+}
+
+function isHallFloorAt(x,z){
+  return hallCells.has(hallKey(
+    Math.floor(x/HALL_CELL),
+    Math.floor(z/HALL_CELL)
+  ));
+}
+
+function canWalkCorridor(x,z,eyeY){
+  // 壁の開口から、室内へ切り替わる位置までは通行可能。
+  const throat=doorOpen && roomDoorLeaf.rotation.y>1.05 &&
+    x> -1.55 && x<-.65 &&
+    Math.abs(z)<.5-playerRadius-.025;
+  if(!throat){
+    // プレイヤーの円と、周囲の「床でないセル」の交差を調べる。
+    const minX=Math.floor((x-playerRadius)/HALL_CELL);
+    const maxX=Math.floor((x+playerRadius)/HALL_CELL);
+    const minZ=Math.floor((z-playerRadius)/HALL_CELL);
+    const maxZ=Math.floor((z+playerRadius)/HALL_CELL);
+    for(let ix=minX;ix<=maxX;ix++){
+      for(let iz=minZ;iz<=maxZ;iz++){
+        if(hallCells.has(hallKey(ix,iz)))continue;
+        if(circleIntersectsBox(x,z,{
+          minX:ix*HALL_CELL,maxX:(ix+1)*HALL_CELL,
+          minZ:iz*HALL_CELL,maxZ:(iz+1)*HALL_CELL
+        }))return false;
+      }
+    }
+    if(!isHallFloorAt(x,z))return false;
+  }
+  if(collidesWithDoorPanel(hallwayDoorPanel,x,z,eyeY))return false;
+  return true;
+}
+
+function setAreaHUD(){
+  $('#hud h1').textContent=mode==='corridor'
+    ? '折り返す廊下'
+    : `夕暮れの部屋 ${String(activeRoomIndex+1).padStart(2,'0')}`;
+  $('#help').textContent=mode==='corridor'
+    ? 'WASD：移動 ／ ドラッグ：見回す ／ ドアをクリックして入室'
+    : 'WASD：移動 ／ ドラッグ：見回す ／ クリック：調べる ／ 下：視点移動';
+  document.querySelectorAll('#nav button').forEach(button=>{
+    button.style.opacity=mode==='corridor'?'.42':'1';
+  });
+}
+
+function updateAreaCrossing(){
+  if(mode==='room' && camera.position.x>4.12){
+    // 室内の右壁から、廊下の左壁へ。
+    refreshRoomPreview();
+    camera.position.x-=5;
+    camera.position.z-=2.5;
+    mode='corridor';
+    corridorRoomIndex=activeRoomIndex;
+    currentView='room';
+    camera.position.y=1.64;
+    cameraTravel=null;
+    updateRoomNumber();
+    setAreaHUD();
+    toast('左右に廊下が続いている。右へ進むと、左・右と折れる曲がり角がある。',4200);
+    return;
+  }
+
+  if(mode!=='corridor')return;
+
+  let nextIndex=corridorRoomIndex;
+  if(camera.position.z>22){
+    camera.position.z-=HALL_PERIOD;
+    nextIndex=(corridorRoomIndex+1)%ROOM_COUNT;
+  }else if(camera.position.z< -10){
+    camera.position.z+=HALL_PERIOD;
+    nextIndex=(corridorRoomIndex+ROOM_COUNT-1)%ROOM_COUNT;
+  }
+
+  if(nextIndex!==corridorRoomIndex){
+    corridorRoomIndex=nextIndex;
+    activeRoomIndex=nextIndex;
+    applyRoomLayout(nextIndex);
+    updateRoomNumber();
+    refreshRoomPreview();
+    // レイキャスト用の行列も、描画前に更新する。
+    corridorScene.updateMatrixWorld(true);
+  }
+
+  if(camera.position.x< -1.15 && Math.abs(camera.position.z)<.5){
+    camera.position.x+=5;
+    camera.position.z+=2.5;
+    camera.position.y=1.64;
+    mode='room';
+    activeRoomIndex=corridorRoomIndex;
+    currentView='room';
+    cameraTravel=null;
+    setAreaHUD();
+    toast(
+      `部屋 ${String(activeRoomIndex+1).padStart(2,'0')}。同じ部屋なのに、家具の場所が少し違う。`,
+      3500
+    );
+  }
+}
+
+refreshRoomPreview();
 
 // レイキャスト。手前の非操作物は遮蔽物として扱う。
 const raycaster=new THREE.Raycaster();
@@ -1295,8 +1764,11 @@ function hierarchyVisible(obj){
 function pick(clientX,clientY){
   pointer.set(clientX/innerWidth*2-1,-clientY/innerHeight*2+1);
   raycaster.setFromCamera(pointer,mode==='inspect'?inspectCamera:camera);
+  const activeScene=mode==='inspect'?inspectScene:
+    mode==='corridor'?corridorScene:scene;
+  activeScene.updateMatrixWorld(true);
   const hits=raycaster.intersectObjects(
-    (mode==='inspect'?inspectScene:scene).children,true
+    activeScene.children,true
   ).filter(h=>h.object.isMesh && hierarchyVisible(h.object));
   if(!hits.length)return null;
   for(let o=hits[0].object;o;o=o.parent){
@@ -1407,6 +1879,9 @@ function tick(){
     if(t===1)cameraTravel=null;
   }
 
+  if(hallwayDoorLeaf){
+    hallwayDoorLeaf.rotation.y=roomDoorLeaf.rotation.y;
+  }
   updateWalking(dt);
 
   // 点灯は速い。消灯は先に暖色へ寄り、その後に減衰。
@@ -1430,6 +1905,8 @@ function tick(){
   diffuserMat.emissiveIntensity=lightAmount*1.8;
   scene.environmentIntensity=.025+.175*lightAmount;
   fillLight.intensity=.105+.125*lightAmount;
+  previewRoomLight.intensity=38*lightAmount;
+  previewRoomLight.color.copy(mainLight.color);
 
   // カーテンの縦ひだ + 低周波の揺れ + 小さな不規則なうねり。
   for(const {m,base,side} of curtains){
@@ -1467,8 +1944,10 @@ function tick(){
     $('#tip').textContent=hovered?.userData.label||'';
     $('#tip').style.opacity=hovered?'1':'0';
   }
-  renderer.render(mode==='inspect'?inspectScene:scene,
-                  mode==='inspect'?inspectCamera:camera);
+  renderer.render(
+    mode==='inspect'?inspectScene:mode==='corridor'?corridorScene:scene,
+    mode==='inspect'?inspectCamera:camera
+  );
 }
 addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
