@@ -80,6 +80,45 @@
     margin:20px auto 0;padding:12px 24px;background:#e9eee6;
     border:0;border-radius:7px;color:#234049
   }
+  #ending{
+    position:fixed;inset:0;z-index:100;
+    display:none;opacity:0;overflow:hidden;
+    background:#fff;color:#343a3b;
+    pointer-events:auto
+  }
+  #endRoll{
+    position:absolute;top:0;left:0;width:100%;
+    padding:0 18px;
+    display:flex;flex-direction:column;align-items:center;
+    gap:25px;visibility:hidden;
+    will-change:transform
+  }
+  #endRoll p{
+    margin:0;min-height:25px;text-align:center;
+    font-size:clamp(11px,2.7vw,16px);
+    line-height:1.9;letter-spacing:.035em;
+    font-weight:400
+  }
+  #endRoll p:first-child{
+    font-size:28px;letter-spacing:.22em
+  }
+  #endFinished{
+    position:absolute;inset:0;display:none;
+    place-content:center;text-align:center;
+    background:#fff;gap:24px
+  }
+  #endFinished h2{
+    margin:0;font-size:30px;letter-spacing:.3em;
+    font-weight:400
+  }
+  #endFinished p{
+    font-size:11px;letter-spacing:.22em;color:#84908d
+  }
+  #endFinished button{
+    border:1px solid #d4dbd8;border-radius:7px;
+    background:#fff;color:#58665f;padding:12px 22px;
+    margin:auto;font-size:12px
+  }
   @media(max-width:600px){
     #hud{top:17px;left:17px} #hud h1{font-size:19px}
     #nav{bottom:13px;gap:4px}
@@ -133,6 +172,15 @@
   <h2>星を、見つけた。</h2>
   <p>茶色いポーチの中で、<br>小さなアクリルの縁が光を拾っていた。</p>
   <button id="continue">そのまま部屋を眺める</button>
+</div>
+
+<div id="ending">
+  <div id="endRoll"></div>
+  <div id="endFinished">
+    <h2>おしまい</h2>
+    <p>THANK YOU FOR PLAYING</p>
+    <button onclick="location.reload()">最初から、もう一度</button>
+  </div>
 </div>
 
 <script type="module">
@@ -1087,7 +1135,7 @@ function createPouch(parent,interactive=false){
     actionable(latch,'留め金を外す',()=>{
       if(pouchOpen){
         toast(activeRoomIndex===0 && !found
-          ? 'ポーチは開いている。中のスターをクリックしよう。'
+          ? 'ポーチは開いている。中には透明なスターがある。'
           : '開いたポーチの中には、何も入っていない。');
         return;
       }
@@ -1106,13 +1154,12 @@ function createPouch(parent,interactive=false){
         toast('留め金が外れた。ポーチの中は、空っぽだった。',3300);
       }
     });
-    actionable(star,'アクリルのスターを手に取る',()=>{
-      if(found || activeRoomIndex!==0)return;
-      found=true;
-      star.visible=false;
-      worldPouch.star.visible=false;
-      $('#objective').textContent='✓ 最初の部屋のアクリルのスターを持っている。';
-      $('#win').style.display='grid';
+    actionable(star,'ポーチの中のスターを調べる',()=>{
+      if(activeRoomIndex!==0 || fusionRunning)return;
+      toast(diskCarried && !acrylicCombined
+        ? '持っている丸い板の穴と、星の形が重なって見える。'
+        : '透明なスター。これだけを持ち出すのではなく、組み合わせるものがありそうだ。',
+        3800);
     });
   }
   return {root,flap,star,clasp};
@@ -1155,13 +1202,25 @@ function enterInspect(){
   inspectPivot.rotation.set(0,0,0);
   inspectCamera.position.set(0,.54,2.4);
   inspectCamera.lookAt(0,.43,0);
+  if(acrylicCombined){
+    fusionDisk.visible=false;
+    inspected.star.visible=false;
+  }
   toast(pouchOpen
     ? (activeRoomIndex===0 && !found
-      ? 'ポーチは開いている。中のスターを手に取れそうだ。'
+      ? 'ポーチは開いている。中には、透明なスターがある。'
       : '茶色いポーチ。開いた中身は空っぽだ。')
     : '茶色い革のポーチ。正面の金色の留め金を外せそうだ。',4200);
 }
 function exitInspect(){
+  if(fusionRunning){
+    toast('二つのアクリルが、ゆっくり重なっていく。',1600);
+    return;
+  }
+  if(acrylicCombined){
+    fusionDisk.visible=false;
+    inspected.star.visible=false;
+  }
   mode='room';
   $('#nav').style.display='flex';$('#back').style.display='none';
   $('#help').textContent='WASD：移動 ／ ドラッグ：見回す ／ クリック：調べる ／ 下：視点移動';
@@ -1637,6 +1696,134 @@ function dreamRandom(){
 // 一文字ずつ傾け、輪郭を何度もずらしてなぞって落書きにする。
 // 外部フォントは不要。
 const dreamWords=['そと','あめ','おもちゃやさん','まほう','もぐる','ぼくのゆめ'];
+// 日本語の字形を、整ったフォントではなく手描きの筆順に近い線で構成。
+// 座標は一文字100×100。線ごとにずれ・太さ・角度を変えて描く。
+const scribbleGlyphs={
+  'そ':[
+    'M 19 14 L 70 10 L 39 39 L 15 47 L 83 39',
+    'M 63 44 C 26 53 33 82 76 85'
+  ],
+  'と':[
+    'M 31 12 Q 34 34 47 46',
+    'M 77 34 C 7 52 13 87 79 81'
+  ],
+  'あ':[
+    'M 16 29 Q 45 34 81 23',
+    'M 46 10 Q 31 60 45 89',
+    'M 73 39 C 63 88 13 98 16 67 C 23 38 88 43 87 67 Q 89 82 70 91'
+  ],
+  'め':[
+    'M 23 17 Q 34 59 57 80',
+    'M 71 12 C 67 57 23 104 14 74 C 1 38 83 25 87 60 Q 91 85 67 92'
+  ],
+  'お':[
+    'M 12 29 Q 41 35 65 25',
+    'M 38 10 L 38 81 Q 26 95 12 76 C 3 59 78 36 86 66 Q 90 85 61 91',
+    'M 72 14 L 87 29'
+  ],
+  'も':[
+    'M 46 9 Q 33 55 34 72 C 34 97 84 92 83 66',
+    'M 17 31 Q 42 38 72 30',
+    'M 15 54 Q 41 64 70 54'
+  ],
+  'ち':[
+    'M 14 29 Q 50 35 85 22',
+    'M 50 10 Q 39 43 30 58 C 67 35 99 62 78 80 Q 62 96 34 88'
+  ],
+  'や':[
+    'M 12 47 C 90 0 109 54 60 56',
+    'M 27 18 Q 40 50 51 91',
+    'M 64 12 L 69 31'
+  ],
+  'ゃ':[
+    'M 25 58 C 91 20 101 67 63 66',
+    'M 39 33 Q 48 65 57 93',
+    'M 70 30 L 74 43'
+  ],
+  'さ':[
+    'M 12 34 Q 54 40 86 24',
+    'M 49 10 Q 54 35 72 57 L 55 54',
+    'M 27 61 C 7 90 55 95 79 85'
+  ],
+  'ん':[
+    'M 53 10 Q 33 45 14 86 C 27 62 48 43 52 63 C 45 110 81 88 91 66'
+  ],
+  'ま':[
+    'M 16 25 Q 49 31 84 23',
+    'M 16 46 Q 46 54 80 44',
+    'M 53 9 L 53 77 C 50 104 10 88 21 74 C 37 57 72 72 87 85'
+  ],
+  'ほ':[
+    'M 20 14 Q 10 48 16 89 L 27 69',
+    'M 41 24 L 85 20',
+    'M 39 45 Q 68 49 89 41',
+    'M 68 23 L 68 77 C 65 102 32 86 40 74 Q 54 59 88 84'
+  ],
+  'う':[
+    'M 35 10 L 65 17',
+    'M 19 39 C 101 9 92 70 42 91'
+  ],
+  'く':[
+    'M 71 10 L 27 47 L 73 90'
+  ],
+  'ぐ':[
+    'M 65 13 L 24 47 L 69 91',
+    'M 75 17 L 83 30',
+    'M 87 10 L 94 22'
+  ],
+  'る':[
+    'M 22 18 L 75 12 L 30 52 C 92 29 108 84 63 92 C 26 102 31 65 54 79 L 63 92'
+  ],
+  'ぼ':[
+    'M 17 18 Q 7 57 17 89 L 25 72',
+    'M 37 28 L 82 24',
+    'M 37 48 Q 58 53 82 45',
+    'M 63 26 L 65 78 C 61 100 31 86 39 75 Q 51 62 87 86',
+    'M 77 7 L 83 17',
+    'M 88 4 L 95 14'
+  ],
+  'の':[
+    'M 49 29 C 36 93 3 91 15 54 C 31 11 92 22 88 60 Q 83 88 56 91'
+  ],
+  'ゆ':[
+    'M 17 23 Q 11 48 19 76 C 14 35 83 18 87 53 C 91 86 44 84 43 62',
+    'M 56 12 C 69 47 59 81 38 94'
+  ]
+};
+
+function drawScribbleCharacter(ctx,character,fontSize){
+  const strokes=scribbleGlyphs[character];
+  if(!strokes)return;
+
+  ctx.save();
+  ctx.translate(0,-fontSize*.88);
+  ctx.scale(fontSize/100,fontSize/100);
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+
+  for(const stroke of strokes){
+    const path=new Path2D(stroke);
+    // 太い一筆に、細い描き直しを重ねる。
+    for(let pass=0;pass<5;pass++){
+      ctx.save();
+      ctx.translate(
+        (dreamRandom()-.5)*(pass===0?1.2:3.1),
+        (dreamRandom()-.5)*(pass===0?1.2:3.1)
+      );
+      ctx.rotate((dreamRandom()-.5)*.025);
+      ctx.lineWidth=pass===0
+        ? 2.9+dreamRandom()*1.5
+        : .35+dreamRandom()*1.2;
+      ctx.strokeStyle=pass===0
+        ? 'rgba(28,25,33,.83)'
+        : `rgba(33,28,37,${.18+dreamRandom()*.24})`;
+      ctx.stroke(path);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
 const graffitiTexture=canvasTexture((ctx,size)=>{
   ctx.clearRect(0,0,size,size);
   const lines=[
@@ -1657,18 +1844,7 @@ const graffitiTexture=canvasTexture((ctx,size)=>{
       ctx.translate(penX,(dreamRandom()-.5)*34);
       ctx.rotate((dreamRandom()-.5)*.20);
       ctx.scale(.91+dreamRandom()*.14,.86+dreamRandom()*.22);
-      ctx.font=`${line.font}px "Klee One","Yu Kyokasho","Hiragino Maru Gothic ProN","Yu Gothic",sans-serif`;
-      ctx.lineJoin='round';
-      ctx.fillStyle='rgba(38,35,42,.66)';
-      ctx.fillText(character,0,0);
-      for(let pass=0;pass<9;pass++){
-        ctx.lineWidth=.9+dreamRandom()*2.6;
-        ctx.strokeStyle=`rgba(24,21,29,${.11+dreamRandom()*.15})`;
-        ctx.strokeText(character,
-          (dreamRandom()-.5)*9,
-          (dreamRandom()-.5)*8
-        );
-      }
+      drawScribbleCharacter(ctx,character,line.font);
       ctx.restore();
       penX+=line.font*(.89+dreamRandom()*.085);
     }
@@ -1873,12 +2049,155 @@ const diskEdges=new THREE.LineSegments(
 );
 dreamDisk.add(diskEdges);
 
-actionable(dreamDisk,'星形の穴があいた円形アクリルを調べる',()=>{
-  toast(found
-    ? '中央の星形の穴は、最初の部屋で拾ったスターと同じ大きさだ。穴の向こうに、紙の文字が見える。'
-    : '透明な丸いアクリル板。中央が星形にくり抜かれている。何かが、ここにぴったり収まりそうだ。',
-    5500);
+actionable(dreamDisk,'星形の穴があいたアクリル板を持つ',()=>{
+  if(diskCarried)return;
+  diskCarried=true;
+  dreamDisk.visible=false;
+  carryArrival=1;
+  $('#objective').textContent='星形の穴があいた板を持っている。最初の部屋のポーチを調べよう。';
+  toast('丸いアクリル板を持った。穴の形は、最初の部屋で見たスターと同じだ。',4800);
 });
+
+let diskCarried=false;
+let acrylicCombined=false;
+let fusionRunning=false;
+let fusionWait=0;
+let walkedThisFrame=0;
+let carryStride=0;
+let carryMotion=0;
+let carryArrival=0;
+let exitRouteActive=false;
+let endingStage='none';
+let endingAge=0;
+let creditsY=0;
+
+// 持っている板は別シーンに描く。
+// 壁や扉で手元の板が途中から切れず、部屋の照明色にも追従する。
+const carryScene=new THREE.Scene();
+carryScene.environment=envRT.texture;
+carryScene.environmentIntensity=.75;
+const carryCamera=new THREE.PerspectiveCamera(
+  48,innerWidth/innerHeight,.01,5
+);
+const carryPivot=group(carryScene);
+const carriedDisk=mesh(diskGeometry,diskMaterial,carryPivot);
+carriedDisk.scale.setScalar(.63);
+carriedDisk.castShadow=false;
+const carriedEdges=diskEdges.clone();
+carriedDisk.add(carriedEdges);
+
+const carriedStar=mesh(
+  inspected.star.geometry,
+  inspected.star.material,
+  carriedDisk
+);
+carriedStar.scale.setScalar(acrylicHoleScale);
+carriedStar.visible=false;
+carriedStar.castShadow=false;
+
+const carryKey=new THREE.PointLight('#fff0d4',2.5,4,2);
+carryKey.position.set(-.3,.7,.2);
+carryScene.add(carryKey);
+carryScene.add(new THREE.HemisphereLight('#deedf3','#67553f',.65));
+
+// 検査画面では、穴の実寸をポーチの表示倍率に合わせる。
+const fusionDisk=mesh(
+  diskGeometry,diskMaterial,inspected.root
+);
+fusionDisk.scale.setScalar(1/.60);
+fusionDisk.visible=false;
+fusionDisk.add(diskEdges.clone());
+
+function startAcrylicFusion(){
+  if(fusionRunning || acrylicCombined)return;
+  fusionRunning=true;
+  fusionWait=0;
+  inspectPivot.rotation.set(0,0,0);
+  inspectCamera.position.set(0,.60,2.75);
+  inspectCamera.lookAt(0,.54,0);
+
+  // スターがポーチから現れる既存アニメーションと競合させない。
+  for(let i=tweens.length-1;i>=0;i--){
+    if(tweens[i].obj===inspected.star.position ||
+       tweens[i].obj===inspected.star.rotation){
+      tweens.splice(i,1);
+    }
+  }
+
+  inspected.star.visible=true;
+  animateTo(inspected.star.position,{x:0,y:.94,z:.10},.9);
+  animateTo(inspected.star.rotation,{x:0,y:0,z:0},.9);
+
+  fusionDisk.visible=true;
+  fusionDisk.position.set(1.03,.71,.66);
+  fusionDisk.rotation.set(.23,-.72,.36);
+
+  toast('丸い板を近づけると、星形の穴に光が集まり始めた。',3500);
+  animateTo(fusionDisk.position,{x:0,y:.94,z:.10},2.7);
+  animateTo(fusionDisk.rotation,{x:0,y:0,z:0},2.7,()=>{
+    acrylicCombined=true;
+    fusionRunning=false;
+    found=true;
+    carriedStar.visible=true;
+    worldPouch.star.visible=false;
+    carryArrival=1;
+    $('#objective').textContent='二つのアクリルが重なった。最初の部屋から外へ出よう。';
+    toast('ぴたり、と重なった。部屋に戻って、ドアの向こうへ。',5000);
+  });
+}
+
+function updateCarryAndStory(dt){
+  if(diskCarried && !acrylicCombined && !fusionRunning &&
+     mode==='inspect' && activeRoomIndex===0 &&
+     currentView==='under' && pouchOpen){
+    fusionWait+=dt;
+    if(fusionWait>.55)startAcrylicFusion();
+  }else{
+    fusionWait=0;
+  }
+
+  // 実際に進めた距離で足取りを進めるため、
+  // 壁に向かってキーを押すだけでは歩行の揺れは起こらない。
+  const walking=walkedThisFrame>0.0001;
+  carryMotion=lerp(carryMotion,walking?1:0,1-Math.exp(-dt*8));
+  carryStride+=walkedThisFrame*10.2;
+  carryArrival*=Math.exp(-dt*4);
+
+  // 左右の足取りに、周期の異なる小さな揺れと呼吸を重ねる。
+  const stepY=
+    Math.sin(carryStride)*.010+
+    Math.sin(carryStride*2+.8)*.004+
+    Math.sin(carryStride*.67+time*.73)*.003;
+  const swayX=
+    Math.cos(carryStride*.5)*.009+
+    Math.sin(time*1.17+carryStride*.31)*.003;
+  const breathing=Math.sin(time*1.19)*.002+
+    Math.sin(time*.47+1.3)*.0014;
+
+  carryCamera.aspect=innerWidth/innerHeight;
+  carryCamera.updateProjectionMatrix();
+  const depth=.82;
+  const halfWidth=Math.tan(THREE.MathUtils.degToRad(24))*
+    depth*carryCamera.aspect;
+  const handX=halfWidth*.79;
+  carryPivot.position.set(
+    handX+swayX*carryMotion,
+    -.205+stepY*carryMotion+breathing-carryArrival*.21,
+    -depth
+  );
+  carryPivot.rotation.set(
+    .20+Math.sin(carryStride*.71)*.025*carryMotion,
+    -.43+Math.sin(time*.63+carryStride*.41)*.026*carryMotion,
+    -.19+Math.sin(carryStride*.5+.4)*.035*carryMotion
+  );
+
+  const roomBrightness=mode==='corridor'?.7:.22+.65*lightAmount;
+  carryScene.environmentIntensity=roomBrightness;
+  carryKey.intensity=mode==='corridor'?2.2:.65+2.2*lightAmount;
+  carryKey.color.copy(mode==='corridor'?warmWhite:mainLight.color);
+
+  updateEnding(dt);
+}
 
 function roomRandom(index){
   let s=(0x9e3779b9 ^ Math.imul(index+1,2654435761))>>>0;
@@ -2038,7 +2357,8 @@ const playerRadius=.16;
 
 function movementBlockedByUI(){
   return (mode!=='room' && mode!=='corridor') ||
-    paperVisible || $('#win').style.display==='grid';
+    paperVisible || fusionRunning || endingStage!=='none' ||
+    $('#win').style.display==='grid';
 }
 
 addEventListener('keydown',e=>{
@@ -2200,11 +2520,12 @@ function updateWalking(dt){
     }
   }
 
-  // 座標をループ変換する前に、実際に歩けた距離だけで波紋を作る。
-  addWaterFootsteps(Math.hypot(
+  // 座標をループ変換する前の実移動距離を、波紋と手元の揺れに使う。
+  walkedThisFrame=Math.hypot(
     camera.position.x-walkStart.x,
     camera.position.z-walkStart.z
-  ));
+  );
+  addWaterFootsteps(walkedThisFrame);
   updateAreaCrossing();
 
   // 手動移動後は「固定視点にいる」という表示だけ外す。
@@ -2469,6 +2790,12 @@ function isHallFloorAt(x,z){
 }
 
 function canWalkCorridor(x,z,eyeY){
+  // 最後の廊下では玄関の壁を通り抜けない。
+  // 扉を開ける操作で、白い光の演出へ移る。
+  if(exitRouteActive && circleIntersectsBox(x,z,{
+    minX:3.95,maxX:6.05,minZ:8.79,maxZ:8.96
+  }))return false;
+
   // 壁の開口から、室内へ切り替わる位置までは通行可能。
   const throat=doorOpen && roomDoorLeaf.rotation.y>1.05 &&
     x> -1.55 && x<-.65 &&
@@ -2520,8 +2847,14 @@ function updateAreaCrossing(){
     camera.position.y=1.64;
     cameraTravel=null;
     updateRoomNumber();
+    exitRouteActive=acrylicCombined && activeRoomIndex===0;
+    exitDoorRoot.visible=exitRouteActive;
     setAreaHUD();
-    toast('左右に廊下が続いている。右へ進むと、左・右と折れる曲がり角がある。',4200);
+
+    toast(exitRouteActive
+      ? '廊下の空気が変わった。右へ進み、いつもの二つの角を曲がろう。'
+      : '左右に廊下が続いている。右へ進むと、左・右と折れる曲がり角がある。',
+      4200);
     return;
   }
 
@@ -2530,10 +2863,14 @@ function updateAreaCrossing(){
   let nextIndex=corridorRoomIndex;
   if(camera.position.z>22){
     camera.position.z-=HALL_PERIOD;
-    nextIndex=(corridorRoomIndex+1)%ROOM_COUNT;
+    if(!exitRouteActive){
+      nextIndex=(corridorRoomIndex+1)%ROOM_COUNT;
+    }
   }else if(camera.position.z< -10){
     camera.position.z+=HALL_PERIOD;
-    nextIndex=(corridorRoomIndex+ROOM_COUNT-1)%ROOM_COUNT;
+    if(!exitRouteActive){
+      nextIndex=(corridorRoomIndex+ROOM_COUNT-1)%ROOM_COUNT;
+    }
   }
 
   if(nextIndex!==corridorRoomIndex){
@@ -2554,6 +2891,8 @@ function updateAreaCrossing(){
     activeRoomIndex=corridorRoomIndex;
     currentView='room';
     cameraTravel=null;
+    exitRouteActive=false;
+    exitDoorRoot.visible=false;
     setAreaHUD();
     const roomNumber=String(activeRoomIndex+1).padStart(2,'0');
     const descriptions={
@@ -2570,6 +2909,178 @@ function updateAreaCrossing(){
 }
 
 refreshRoomPreview();
+
+// 二回曲がった先に出現する玄関。
+// 通常時には非表示。室内から出た時点で、完成したアクリルを判定する。
+const exitDoorRoot=group(corridorScene);
+exitDoorRoot.position.set(5,0,8.87);
+exitDoorRoot.rotation.y=Math.PI;
+exitDoorRoot.visible=false;
+
+const exitWallMaterial=material('#eeeade',.88);
+for(const x of [-.90,.90]){
+  box(.25,3.14,.14,exitWallMaterial,exitDoorRoot,x,1.57,0);
+}
+box(1.55,.52,.14,exitWallMaterial,exitDoorRoot,0,2.88,0);
+
+for(const x of [-.79,.79]){
+  box(.075,2.67,.19,trim,exitDoorRoot,x,1.335,.025);
+}
+box(1.66,.075,.19,trim,exitDoorRoot,0,2.65,.025);
+box(1.58,.025,.28,steel,exitDoorRoot,0,.015,.04);
+
+const exitLeaf=group(exitDoorRoot);
+exitLeaf.position.set(-.755,0,.04);
+const exitDoorMaterial=material('#d6d2c6',.4,.12);
+box(1.51,2.57,.075,exitDoorMaterial,exitLeaf,.755,1.305,0);
+for(const y of [.70,1.85]){
+  box(1.19,.91,.022,material('#c7c5ba',.48,.07),
+    exitLeaf,.755,y,.045);
+}
+box(.11,.25,.022,steel,exitLeaf,1.35,1.24,.058);
+const exitHandle=cylinder(.018,.018,.21,steel,exitLeaf,1.27,1.27,.13);
+exitHandle.rotation.z=Math.PI/2;
+
+const exitSignTexture=canvasTexture((ctx,size)=>{
+  ctx.fillStyle='#eeeade';ctx.fillRect(0,0,size,size);
+  ctx.fillStyle='#4c554e';ctx.textAlign='center';
+  ctx.font='bold 87px sans-serif';ctx.fillText('そと',size/2,272);
+  ctx.font='21px monospace';ctx.fillText('THE WAY OUT',size/2,330);
+});
+mesh(new THREE.PlaneGeometry(.42,.42),
+  material('#ffffff',.8,0,{map:exitSignTexture}),
+  exitLeaf,.755,2.04,.061);
+
+// ドアの裏は、景色ではなく白い光。
+const exitWhite=mesh(
+  new THREE.PlaneGeometry(1.53,2.60),
+  new THREE.MeshBasicMaterial({
+    color:'#ffffff',side:THREE.DoubleSide,toneMapped:false
+  }),
+  exitDoorRoot,0,1.31,-.085
+);
+const exitGlow=new THREE.PointLight('#ffffff',0,8,2);
+exitGlow.position.set(0,1.65,.35);
+exitDoorRoot.add(exitGlow);
+
+actionable(exitLeaf,'玄関のドアを開ける',()=>{
+  if(!exitRouteActive || endingStage!=='none')return;
+  movementKeys.clear();
+  cameraTravel=null;
+  endingStage='door';
+  endingAge=0;
+  animateTo(exitLeaf.rotation,{y:1.52},1.35);
+  animateTo(exitGlow,{intensity:30},1.6);
+  $('#tip').style.opacity='0';
+  toast('ドアの向こうには、白い光があった。',1600);
+});
+
+const endingLines=[
+  '夕暮れの部屋',
+  '— ACRYLIC STAR —',
+  '',
+  '開発者の、最後のメモ',
+  '',
+  'やった。',
+  'やっと、開発が完成した。',
+  'この一行を書くために、何枚の板を置いたんだろう。',
+  '',
+  '最初は、部屋をひとつ作る話だった。',
+  '机があって、本があって、星がひとつ。',
+  'ずいぶん穏やかな予定表だった。',
+  '',
+  'そのうち、カーテンが風を要求しはじめた。',
+  'スイッチは、消える瞬間の余韻を要求した。',
+  '掛け布団は、左右の角から順番に抗議してきた。',
+  '布団の角に、こんなに謝ったのは初めてだ。',
+  '',
+  'やっと部屋ができたと思ったら、ドアが開いた。',
+  'ドアの向こうには、仕事が増える廊下があった。',
+  '曲がっても、曲がっても、まだ作業があった。',
+  'なるほど。これは開発のループだったのか。',
+  '',
+  '雨まで降った。',
+  '室内なのに。',
+  '屋根を作った意味について、少し考えた。',
+  '',
+  '椅子は浮いた。',
+  '床も壁も黄色くなった。',
+  '最後には、家具が天井から生えた。',
+  '家具屋さんにも、建築士さんにも見せにくい部屋だ。',
+  '',
+  'あの落書きは、きれいに書かないように書いた。',
+  '丁寧に、雑に。',
+  'この矛盾だけで、もう一部屋できそうだった。',
+  '',
+  'でも、透明な板に星が重なった瞬間。',
+  'ああ、このための部屋だったのかと思った。',
+  '木目も、布の影も、水の波紋も。',
+  '遠回りが、小さな形に収まった。',
+  '',
+  '最後まで歩いてくれて、ありがとう。',
+  'ポーチの裏を見てくれた人にも、ありがとう。',
+  'スイッチを何度も押した人にも、ありがとう。',
+  '散らかした服は……まあ、今日はそのままでいい。',
+  '',
+  'さあ、外へ。',
+  'こちらはようやく、コードの戸締まりをします。',
+  '',
+  '……追加の部屋？',
+  '今日は、いったん完成ということで。',
+  '',
+  'THANK YOU FOR PLAYING',
+  '',
+  'おしまい'
+];
+
+const creditsList=$('#endRoll');
+for(const text of endingLines){
+  const line=document.createElement('p');
+  line.textContent=text || '\u00a0';
+  creditsList.appendChild(line);
+}
+
+function updateEnding(dt){
+  if(endingStage==='none' || endingStage==='finished')return;
+  endingAge+=dt;
+
+  if(endingStage==='door'){
+    if(endingAge<.68)return;
+    endingStage='white';
+    endingAge=0;
+    $('#ending').style.display='block';
+    $('#ending').style.opacity='0';
+    return;
+  }
+
+  if(endingStage==='white'){
+    $('#ending').style.opacity=String(clamp(endingAge/2.1,0,1));
+    if(endingAge<2.65)return;
+
+    endingStage='credits';
+    endingAge=0;
+    creditsY=innerHeight+65;
+    creditsList.style.transform=`translateY(${creditsY}px)`;
+    creditsList.style.visibility='visible';
+    $('#hud').style.display='none';
+    $('#nav').style.display='none';
+    $('#back').style.display='none';
+    $('#tip').style.display='none';
+    $('#toast').classList.remove('show');
+    return;
+  }
+
+  if(endingStage==='credits'){
+    // 一行ごとに待つのではなく、一定間隔で複数行が同時に流れる。
+    creditsY-=dt*43;
+    creditsList.style.transform=`translateY(${creditsY}px)`;
+    if(creditsY+creditsList.offsetHeight< -60){
+      endingStage='finished';
+      creditsList.style.visibility='hidden';
+      $('#endFinished').style.display='grid';
+    }
+  }
+}
 
 // レイキャスト。手前の非操作物は遮蔽物として扱う。
 const raycaster=new THREE.Raycaster();
@@ -2603,7 +3114,8 @@ function zoomInspect(factor){
   inspectCamera.lookAt(0,.43,0);
 }
 renderer.domElement.addEventListener('pointerdown',e=>{
-  if(paperVisible||$('#win').style.display==='grid')return;
+  if(paperVisible || fusionRunning || endingStage!=='none' ||
+     $('#win').style.display==='grid')return;
   renderer.domElement.setPointerCapture(e.pointerId);
   touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(touches.size===2){
@@ -2651,7 +3163,12 @@ renderer.domElement.addEventListener('pointercancel',()=>{
   down=null;dragging=false;touches.clear();
 });
 renderer.domElement.addEventListener('wheel',e=>{
-  if(mode==='inspect'){e.preventDefault();zoomInspect(Math.exp(e.deltaY*.001));}
+  if(mode==='inspect'){
+    e.preventDefault();
+    if(!fusionRunning && endingStage==='none'){
+      zoomInspect(Math.exp(e.deltaY*.001));
+    }
+  }
 },{passive:false});
 addEventListener('keydown',e=>{
   if(e.key==='Escape'){
@@ -2699,9 +3216,11 @@ function tick(){
   if(hallwayDoorLeaf){
     hallwayDoorLeaf.rotation.y=roomDoorLeaf.rotation.y;
   }
+  walkedThisFrame=0;
   updateWalking(dt);
   updateRoomAnomaly(dt);
   updateAnomalyPreview();
+  updateCarryAndStory(dt);
 
   // 点灯は速い。消灯は先に暖色へ寄り、その後に減衰。
   if(roomLightOn){
@@ -2756,7 +3275,8 @@ function tick(){
   mp.needsUpdate=true;
 
   hoverAge+=dt;
-  if(hoverAge>.09 && !down && !paperVisible){
+  if(hoverAge>.09 && !down && !paperVisible &&
+     !fusionRunning && endingStage==='none'){
     hoverAge=0;
     hovered=pick(lastPointer.x,lastPointer.y);
     renderer.domElement.style.cursor=hovered?'pointer':'grab';
@@ -2769,6 +3289,14 @@ function tick(){
     mode==='inspect'?inspectScene:mode==='corridor'?corridorScene:scene,
     mode==='inspect'?inspectCamera:camera
   );
+
+  if(diskCarried && mode!=='inspect' &&
+     endingStage!=='credits' && endingStage!=='finished'){
+    renderer.autoClear=false;
+    renderer.clearDepth();
+    renderer.render(carryScene,carryCamera);
+    renderer.autoClear=true;
+  }
 }
 addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
