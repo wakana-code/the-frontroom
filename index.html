@@ -119,6 +119,82 @@
     background:#fff;color:#58665f;padding:12px 22px;
     margin:auto;font-size:12px
   }
+  #epilogue{
+    position:fixed;inset:0;z-index:110;display:none;
+    overflow:hidden;color:#fff;cursor:pointer;
+    background:
+      linear-gradient(180deg,transparent 37%,#05090c19 51%,#030609b8 80%,#020406f0 100%);
+  }
+  #epilogue::before{
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+    background:repeating-linear-gradient(
+      0deg,#00000024 0px,#00000024 1px,transparent 1px,transparent 4px
+    );
+    opacity:.48;
+  }
+  #epilogue::after{
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
+    box-shadow:inset 0 0 13vw 4vw #03080bad;
+  }
+  #tapeNoise{
+    position:absolute;inset:0;width:100%;height:100%;
+    pointer-events:none;opacity:.048;image-rendering:pixelated;
+    mix-blend-mode:screen;z-index:3;
+  }
+  #tapeBand{
+    position:absolute;left:0;width:100%;height:6%;
+    pointer-events:none;opacity:0;z-index:4;
+    background:repeating-linear-gradient(
+      0deg,transparent 0 2px,#dce7e24d 2px 3px,#0406082e 3px 5px
+    );
+  }
+  #tapeLabel{
+    position:absolute;left:5vw;top:5vh;z-index:5;
+    font:11px monospace;letter-spacing:.18em;
+    color:#e3eee6a6;text-shadow:1px 0 #c8e7db66;
+  }
+  #dramaDialogue{
+    position:absolute;left:50%;bottom:10vh;
+    transform:translateX(-50%);
+    width:min(800px,86vw);z-index:6;
+    transition:opacity .28s;
+  }
+  #dramaSpeaker{
+    font-size:12px;letter-spacing:.19em;color:#ccd7d1;
+    margin:0 0 15px;
+  }
+  #dramaLine{
+    margin:0;min-height:3.7em;
+    font-size:clamp(17px,2.6vw,23px);line-height:1.95;
+    font-weight:400;letter-spacing:.04em;
+    text-shadow:0 2px 12px #000b,1px 0 #d6f4ed38;
+    white-space:pre-wrap;
+  }
+  #dramaHint{
+    position:absolute;bottom:3.8vh;right:6vw;z-index:6;
+    font-size:10px;color:#c8d0cca8;letter-spacing:.08em;
+  }
+  #dramaChoices{
+    position:absolute;inset:0;z-index:8;
+    display:none;place-content:center;text-align:center;
+    background:linear-gradient(#07101238,#04080bc9);
+    gap:17px;padding:25px;
+  }
+  #dramaChoices h2{
+    font-weight:400;font-size:27px;letter-spacing:.21em;margin:0 0 7px;
+  }
+  #dramaChoices p{font-size:12px;line-height:1.9;color:#d6dfd8}
+  #dramaChoices button{
+    margin:0 auto;border:1px solid #ffffff50;
+    border-radius:5px;padding:12px 24px;color:#edf3ed;
+    background:#d8e7dc13;font-size:12px;
+  }
+  #dramaReturn{
+    display:none;position:absolute;bottom:5vh;left:50%;
+    transform:translateX(-50%);z-index:9;
+    border:1px solid #ffffff40;background:#152023a6;
+    color:#e2eae4;border-radius:5px;padding:11px 19px;font-size:12px;
+  }
   @media(max-width:600px){
     #hud{top:17px;left:17px} #hud h1{font-size:19px}
     #nav{bottom:13px;gap:4px}
@@ -143,7 +219,7 @@
   <small>AN EVENING ROOM / EXPLORATION</small>
   <h1>夕暮れの部屋</h1>
   <div id="objective">この部屋のどこかにある、アクリルのスターを探す。</div>
-  <div id="help">WASD：移動　／　ドラッグ：見回す　／　クリック：調べる　／　下：視点移動</div>
+  <div id="help">WASD：移動 ／ B＋WASD：ダッシュ ／ ドラッグ：見回す ／ クリック：調べる</div>
 </div>
 
 <div id="nav">
@@ -181,6 +257,24 @@
     <p>THANK YOU FOR PLAYING</p>
     <button onclick="location.reload()">最初から、もう一度</button>
   </div>
+</div>
+
+<div id="epilogue">
+  <canvas id="tapeNoise"></canvas>
+  <div id="tapeBand"></div>
+  <div id="tapeLabel">PLAY ▷　HOME VIDEO</div>
+  <div id="dramaDialogue" aria-live="polite">
+    <p id="dramaSpeaker"></p>
+    <p id="dramaLine"></p>
+  </div>
+  <div id="dramaHint">自動再生 ／ クリック・Enter・Spaceで次へ</div>
+  <div id="dramaChoices">
+    <h2>ただいま。</h2>
+    <p>夕暮れの部屋 — おしまい<br>最後まで遊んでくれて、ありがとう。</p>
+    <button id="dramaReplay">もう一度遊ぶ</button>
+    <button id="dramaStay">このまま部屋を眺める</button>
+  </div>
+  <button id="dramaReturn">選択に戻る</button>
 </div>
 
 <script type="module">
@@ -1223,7 +1317,7 @@ function exitInspect(){
   }
   mode='room';
   $('#nav').style.display='flex';$('#back').style.display='none';
-  $('#help').textContent='WASD：移動 ／ ドラッグ：見回す ／ クリック：調べる ／ 下：視点移動';
+  $('#help').textContent='WASD：移動 ／ B＋WASD：ダッシュ ／ ドラッグ：見回す ／ クリック：調べる';
   if(pouchOpen){
     worldPouch.flap.rotation.x=-2.12;
     worldPouch.star.visible=activeRoomIndex===0 && !found;
@@ -2063,6 +2157,8 @@ let acrylicCombined=false;
 let fusionRunning=false;
 let fusionWait=0;
 let walkedThisFrame=0;
+let sprintThisFrame=false;
+let carrySprint=0;
 let carryStride=0;
 let carryMotion=0;
 let carryArrival=0;
@@ -2147,6 +2243,8 @@ function startAcrylicFusion(){
 }
 
 function updateCarryAndStory(dt){
+  finalDeadEnd.visible=exitRouteActive;
+
   if(diskCarried && !acrylicCombined && !fusionRunning &&
      mode==='inspect' && activeRoomIndex===0 &&
      currentView==='under' && pouchOpen){
@@ -2160,17 +2258,27 @@ function updateCarryAndStory(dt){
   // 壁に向かってキーを押すだけでは歩行の揺れは起こらない。
   const walking=walkedThisFrame>0.0001;
   carryMotion=lerp(carryMotion,walking?1:0,1-Math.exp(-dt*8));
-  carryStride+=walkedThisFrame*10.2;
+  carrySprint=lerp(
+    carrySprint,
+    walking && sprintThisFrame?1:0,
+    1-Math.exp(-dt*6)
+  );
+
+  // ダッシュ時は歩幅が広くなるので、距離あたりの周期は少し減らす。
+  // 移動速度が上がる分、時間あたりの足取りは自然に速くなる。
+  carryStride+=walkedThisFrame*lerp(10.2,8.1,carrySprint);
   carryArrival*=Math.exp(-dt*4);
 
-  // 左右の足取りに、周期の異なる小さな揺れと呼吸を重ねる。
-  const stepY=
+  // 歩行時の揺れは維持。走ると振幅と左右の重心移動が増える。
+  const stepY=(
     Math.sin(carryStride)*.010+
     Math.sin(carryStride*2+.8)*.004+
-    Math.sin(carryStride*.67+time*.73)*.003;
-  const swayX=
+    Math.sin(carryStride*.67+time*.73)*.003
+  )*lerp(1,1.85,carrySprint);
+  const swayX=(
     Math.cos(carryStride*.5)*.009+
-    Math.sin(time*1.17+carryStride*.31)*.003;
+    Math.sin(time*1.17+carryStride*.31)*.003
+  )*lerp(1,1.5,carrySprint);
   const breathing=Math.sin(time*1.19)*.002+
     Math.sin(time*.47+1.3)*.0014;
 
@@ -2182,13 +2290,15 @@ function updateCarryAndStory(dt){
   const handX=halfWidth*.79;
   carryPivot.position.set(
     handX+swayX*carryMotion,
-    -.205+stepY*carryMotion+breathing-carryArrival*.21,
+    -.205+stepY*carryMotion+breathing-carryArrival*.21-carrySprint*.025,
     -depth
   );
   carryPivot.rotation.set(
-    .20+Math.sin(carryStride*.71)*.025*carryMotion,
+    .20+carrySprint*.08+
+      Math.sin(carryStride*.71)*.025*carryMotion*lerp(1,1.6,carrySprint),
     -.43+Math.sin(time*.63+carryStride*.41)*.026*carryMotion,
-    -.19+Math.sin(carryStride*.5+.4)*.035*carryMotion
+    -.19-carrySprint*.06+
+      Math.sin(carryStride*.5+.4)*.035*carryMotion*lerp(1,1.6,carrySprint)
   );
 
   const roomBrightness=mode==='corridor'?.7:.22+.65*lightAmount;
@@ -2352,7 +2462,7 @@ document.querySelectorAll('#nav button').forEach(b=>{
 
 // WASD：視線の上下角には影響されず、床と平行に移動する。
 const movementKeys=new Set();
-const movementCodes=new Set(['KeyW','KeyA','KeyS','KeyD']);
+const movementCodes=new Set(['KeyW','KeyA','KeyS','KeyD','KeyB']);
 const playerRadius=.16;
 
 function movementBlockedByUI(){
@@ -2501,7 +2611,9 @@ function updateWalking(dt){
   cameraTravel=null;
 
   const walkStart=camera.position.clone();
-  const speed=currentView==='under'?.65:1.65;
+  const sprinting=movementKeys.has('KeyB') && currentView!=='under';
+  const speed=currentView==='under'?.65:sprinting?3.05:1.65;
+  sprintThisFrame=sprinting;
   const distance=speed*dt/Math.hypot(forward,sideways);
   const dx=(-Math.sin(yaw)*forward+Math.cos(yaw)*sideways)*distance;
   const dz=(-Math.cos(yaw)*forward-Math.sin(yaw)*sideways)*distance;
@@ -2792,9 +2904,15 @@ function isHallFloorAt(x,z){
 function canWalkCorridor(x,z,eyeY){
   // 最後の廊下では玄関の壁を通り抜けない。
   // 扉を開ける操作で、白い光の演出へ移る。
-  if(exitRouteActive && circleIntersectsBox(x,z,{
-    minX:3.95,maxX:6.05,minZ:8.79,maxZ:8.96
-  }))return false;
+  if(exitRouteActive){
+    // 右の玄関。
+    if(circleIntersectsBox(x,z,{
+      minX:3.95,maxX:6.05,minZ:8.79,maxZ:8.96
+    }))return false;
+
+    // 左は実体のある壁で閉じる。奥のループ区間へは進めない。
+    if(z< -4.57+playerRadius)return false;
+  }
 
   // 壁の開口から、室内へ切り替わる位置までは通行可能。
   const throat=doorOpen && roomDoorLeaf.rotation.y>1.05 &&
@@ -2828,8 +2946,8 @@ function setAreaHUD(){
       ? 'ぼくのゆめ'
       : `夕暮れの部屋 ${String(activeRoomIndex+1).padStart(2,'0')}`;
   $('#help').textContent=mode==='corridor'
-    ? 'WASD：移動 ／ ドラッグ：見回す ／ ドアをクリックして入室'
-    : 'WASD：移動 ／ ドラッグ：見回す ／ クリック：調べる ／ 下：視点移動';
+    ? 'WASD：移動 ／ B＋WASD：ダッシュ ／ ドラッグ：見回す ／ ドアをクリック'
+    : 'WASD：移動 ／ B＋WASD：ダッシュ ／ ドラッグ：見回す ／ クリック：調べる';
   document.querySelectorAll('#nav button').forEach(button=>{
     button.style.opacity=mode==='corridor'?'.42':'1';
   });
@@ -2916,6 +3034,13 @@ const exitDoorRoot=group(corridorScene);
 exitDoorRoot.position.set(5,0,8.87);
 exitDoorRoot.rotation.y=Math.PI;
 exitDoorRoot.visible=false;
+
+// 最終ルートの左側は、白い背景ではなく廊下と同じ壁の行き止まり。
+const finalDeadEnd=group(corridorScene);
+finalDeadEnd.visible=false;
+box(2.12,3.14,.20,wall,finalDeadEnd,0,1.57,-4.67);
+box(2.12,.14,.23,trim,finalDeadEnd,0,.07,-4.65);
+box(2.12,.09,.23,trim,finalDeadEnd,0,3.08,-4.65);
 
 const exitWallMaterial=material('#eeeade',.88);
 for(const x of [-.90,.90]){
@@ -3040,7 +3165,272 @@ for(const text of endingLines){
   creditsList.appendChild(line);
 }
 
+// エピローグは「最初の部屋を映した古いホームビデオ」。
+// 登場人物は画面に出さず、部屋と台詞だけで進める。
+const epilogueCamera=new THREE.PerspectiveCamera(
+  59,innerWidth/innerHeight,.025,35
+);
+let epilogueActive=false;
+let epilogueTime=0;
+let dialogueIndex=0;
+let dialogueAge=0;
+let dialoguePause=0;
+let noiseAge=0;
+let nextTapeGlitch=5.2;
+let tapeGlitchAge=0;
+let tapeGlitchDuration=0;
+
+const dramaLines=[
+  ['子ども','ねえねえ、お母さん。'],
+  ['母','……どうしたの。まだ起きてたの。'],
+  ['子ども','あの部屋、なくなっちゃう？'],
+  ['母','明日になったら、鍵を返すからね。'],
+  ['子ども','じゃあ、中にいるぼくは、どうなるの。'],
+  ['母','中にいる？'],
+  ['子ども','小さいときのぼく。\n帰り道、わからなくならない？'],
+  ['母','……こっちへおいで。'],
+  ['子ども','寝ると、廊下が長くなるんだ。\n曲がっても、まだ家の中なの。'],
+  ['母','このところ、箱ばかりで歩きにくかったものね。'],
+  ['子ども','一つだけ、入りたくない部屋がある。'],
+  ['母','どんな部屋？'],
+  ['子ども','まっしろ。上にも横にも家具があって。\nぼくの字なのに、ぼくが書いた気がしない。'],
+  ['母','……壁に貼っていた紙、覚えてる？'],
+  ['子ども','お母さんが、はがしたやつ？'],
+  ['母','うん。壁に直接書いちゃったところもあったけど。'],
+  ['子ども','怒った？'],
+  ['母','少しね。\nでも、捨てられなくて、写真を撮ってある。'],
+  ['子ども','何を書いたっけ。'],
+  ['母','行きたいところとか、やってみたいこと。\n字を覚えたばかりで、毎日増えていったの。'],
+  ['子ども','おもちゃ屋さん。'],
+  ['母','そう。それは、ずいぶん大きな字だった。'],
+  ['子ども','あのお城、まだ売ってるかな。'],
+  ['母','どうかな。\nでも、本の続きを読むことなら、今夜でもできる。'],
+  ['子ども','椅子が飛んでいくところ。'],
+  ['母','あなた、そこでいつも笑ってたね。\n座ったまま学校に行けたらいいのにって。'],
+  ['子ども','……雨の日は、本当にそう思う。'],
+  ['母','お母さんも。荷物も一緒に飛んでくれたら、もっといい。'],
+  ['子ども','夢では、部屋の中まで雨だったよ。'],
+  ['母','あの雨漏りの夜、怖かった？'],
+  ['子ども','最初だけ。\n洗面器の音が、だんだん変な歌みたいになった。'],
+  ['母','二人で布団を動かしたね。'],
+  ['子ども','黄色いところに。'],
+  ['母','台所の灯りね。あそこだけ、やけに明るくて。'],
+  ['子ども','朝じゃないのに、朝みたいだった。'],
+  ['母','あのときも、ちゃんと眠れたでしょう。'],
+  ['子ども','うん。'],
+  ['子ども','でも、覚えてるものがバラバラになると、\nちょっと怖い。'],
+  ['母','引っ越しの箱と同じかもしれないね。\n開けるまでは、何が入ってるかわからない。'],
+  ['子ども','変な部屋も、ぼくのもの？'],
+  ['母','怖かったことも、楽しかったことも。\nでも、全部を一人で片づけなくていいよ。'],
+  ['子ども','……これ、見つけた。'],
+  ['母','あ、その丸いの。ずっと探してたのよ。'],
+  ['子ども','真ん中、抜けてる。'],
+  ['母','お星さまは、小さいポーチに入れたはず。\nなくさないようにって、分けたのにね。'],
+  ['子ども','分けると、なくなるよ。'],
+  ['母','本当。そのとおり。'],
+  ['子ども','ほら。ぴったり。'],
+  ['母','窓に下げていたときみたい。'],
+  ['子ども','新しい家にも、窓ある？'],
+  ['母','あるよ。朝、光が入る窓。'],
+  ['子ども','じゃあ、そこがいい。'],
+  ['母','そうしよう。'],
+  ['子ども','玄関の「そと」も、持っていく？'],
+  ['母','あの札？\nあなたが一人で靴を履けた日に、貼ったんだったね。'],
+  ['子ども','こっちから出られます、って。'],
+  ['母','助かったわ。お母さん、迷うところだった。'],
+  ['子ども','うそだ。'],
+  ['母','ふふ。札も持っていこう。\n新しい家の扉にも、貼ってくれる？'],
+  ['子ども','うん。'],
+  ['子ども','……小さいぼくも、来るかな。'],
+  ['母','もう来てると思うよ。\nあなたが、こんなに覚えていてくれたから。'],
+  ['子ども','そっか。'],
+  ['母','さあ。明日は少し早いよ。'],
+  ['子ども','最後に、部屋におやすみって言ってくる。'],
+  ['母','うん。お母さん、ここで待ってる。'],
+  ['子ども','おやすみ。\n……またね。'],
+  ['','—— 翌朝。'],
+  ['母','忘れ物、ない？'],
+  ['子ども','ない。星も、札も、持った。'],
+  ['母','それじゃあ、行こうか。'],
+  ['子ども','ねえ。帰りに、あのお店の前、通れる？'],
+  ['母','おもちゃ屋さん？'],
+  ['子ども','見るだけ。'],
+  ['母','……見るだけならね。'],
+  ['子ども','やった。'],
+  ['','扉の閉まる音。\nその向こうで、二人の笑い声がした。']
+];
+
+const tapeCanvas=$('#tapeNoise');
+tapeCanvas.width=240;
+tapeCanvas.height=150;
+const tapeContext=tapeCanvas.getContext('2d');
+const tapeImage=tapeContext.createImageData(240,150);
+
+function drawTapeNoise(){
+  const pixels=tapeImage.data;
+  for(let i=0;i<pixels.length;i+=4){
+    const value=Math.floor(Math.random()*220);
+    pixels[i]=value;
+    pixels[i+1]=value;
+    pixels[i+2]=value;
+    pixels[i+3]=255;
+  }
+  tapeContext.putImageData(tapeImage,0,0);
+}
+
+function showDramaLine(){
+  const [speaker,text]=dramaLines[dialogueIndex];
+  $('#dramaSpeaker').textContent=speaker;
+  $('#dramaLine').textContent=text;
+  $('#dramaDialogue').style.opacity='0';
+  dialogueAge=0;
+}
+
+function finishDrama(){
+  endingStage='choice';
+  dialoguePause=0;
+  $('#dramaDialogue').style.opacity='0';
+  $('#dramaHint').style.display='none';
+  $('#tapeLabel').textContent='END OF TAPE';
+  $('#dramaChoices').style.display='grid';
+}
+
+function advanceDrama(){
+  if(endingStage!=='epilogue' || dialoguePause>0 || dialogueAge<.65)return;
+  if(dialogueIndex>=dramaLines.length-1){
+    finishDrama();
+    return;
+  }
+  $('#dramaDialogue').style.opacity='0';
+  dialoguePause=.30;
+}
+
+$('#epilogue').addEventListener('click',event=>{
+  if(event.target.closest('button'))return;
+  advanceDrama();
+});
+addEventListener('keydown',event=>{
+  if(endingStage!=='epilogue')return;
+  if(event.code==='Enter' || event.code==='Space'){
+    event.preventDefault();
+    if(!event.repeat)advanceDrama();
+  }
+});
+$('#dramaReplay').onclick=()=>location.reload();
+$('#dramaStay').onclick=()=>{
+  $('#dramaChoices').style.display='none';
+  $('#dramaReturn').style.display='block';
+};
+$('#dramaReturn').onclick=()=>{
+  $('#dramaReturn').style.display='none';
+  $('#dramaChoices').style.display='grid';
+};
+
+function startEpilogue(){
+  endingStage='epilogue';
+  endingAge=0;
+  epilogueActive=true;
+  epilogueTime=0;
+  dialogueIndex=0;
+  dialoguePause=0;
+  movementKeys.clear();
+  tweens.length=0;
+  cameraTravel=null;
+
+  // 最初の部屋を映す。探索を再開するのではなく、録画風の固定ショット。
+  mode='room';
+  currentView='room';
+  activeRoomIndex=0;
+  corridorRoomIndex=0;
+  applyRoomLayout(0);
+  drawerOpen=false;
+  drawer.position.z=0;
+  closetOpen=false;
+  leftDoor.rotation.y=0;
+  rightDoor.rotation.y=0;
+  doorOpen=false;
+  roomDoorLeaf.rotation.y=0;
+  hallwayDoorLeaf.rotation.y=0;
+  exitRouteActive=false;
+  exitDoorRoot.visible=false;
+  finalDeadEnd.visible=false;
+  diskCarried=false;
+  roomLightOn=true;
+  lampOn=true;
+
+  epilogueCamera.position.set(.10,1.64,3.34);
+  epilogueCamera.lookAt(-.15,1.12,-2.20);
+
+  $('#ending').style.display='none';
+  creditsList.style.visibility='hidden';
+  $('#epilogue').style.display='block';
+  $('#dramaChoices').style.display='none';
+  $('#dramaReturn').style.display='none';
+  $('#dramaHint').style.display='block';
+  $('#tapeLabel').textContent='PLAY ▷　HOME VIDEO';
+  clearTimeout(toastTimer);
+  $('#toast').classList.remove('show');
+  showDramaLine();
+}
+
+function updateEpilogue(dt){
+  epilogueTime+=dt;
+  noiseAge+=dt;
+  if(noiseAge>.085){
+    noiseAge=0;
+    drawTapeNoise();
+  }
+
+  // 普段は安定した画面。数秒に一度だけ短いトラッキングの乱れ。
+  if(epilogueTime>nextTapeGlitch){
+    tapeGlitchAge=0;
+    tapeGlitchDuration=.14+Math.random()*.20;
+    nextTapeGlitch=epilogueTime+7+Math.random()*9;
+  }
+  tapeGlitchAge+=dt;
+  const glitch=tapeGlitchAge<tapeGlitchDuration;
+  const jitter=glitch?(Math.random()-.5)*.004:0;
+
+  $('#tapeBand').style.opacity=glitch?'.35':'0';
+  if(glitch){
+    $('#tapeBand').style.top=`${12+Math.random()*73}%`;
+  }
+  $('#tapeNoise').style.opacity=glitch?'.105':'.048';
+
+  epilogueCamera.aspect=innerWidth/innerHeight;
+  epilogueCamera.updateProjectionMatrix();
+  epilogueCamera.position.set(
+    .10+Math.sin(epilogueTime*.13)*.008+jitter,
+    1.64+Math.sin(epilogueTime*.17)*.004+jitter*.4,
+    3.34
+  );
+  epilogueCamera.lookAt(-.15,1.12,-2.20);
+  epilogueCamera.rotateZ(Math.sin(epilogueTime*.11)*.0007+jitter*.15);
+
+  if(endingStage!=='epilogue')return;
+
+  if(dialoguePause>0){
+    dialoguePause-=dt;
+    if(dialoguePause<=0){
+      dialogueIndex++;
+      showDramaLine();
+    }
+    return;
+  }
+
+  dialogueAge+=dt;
+  if(dialogueAge>.12)$('#dramaDialogue').style.opacity='1';
+
+  const text=dramaLines[dialogueIndex][1];
+  const duration=clamp(2.3+text.length*.10,4.0,8.7);
+  if(dialogueAge>duration)advanceDrama();
+}
+
 function updateEnding(dt){
+  if(epilogueActive){
+    updateEpilogue(dt);
+    return;
+  }
   if(endingStage==='none' || endingStage==='finished')return;
   endingAge+=dt;
 
@@ -3071,13 +3461,10 @@ function updateEnding(dt){
   }
 
   if(endingStage==='credits'){
-    // 一行ごとに待つのではなく、一定間隔で複数行が同時に流れる。
     creditsY-=dt*43;
     creditsList.style.transform=`translateY(${creditsY}px)`;
     if(creditsY+creditsList.offsetHeight< -60){
-      endingStage='finished';
-      creditsList.style.visibility='hidden';
-      $('#endFinished').style.display='grid';
+      startEpilogue();
     }
   }
 }
@@ -3217,6 +3604,7 @@ function tick(){
     hallwayDoorLeaf.rotation.y=roomDoorLeaf.rotation.y;
   }
   walkedThisFrame=0;
+  sprintThisFrame=false;
   updateWalking(dt);
   updateRoomAnomaly(dt);
   updateAnomalyPreview();
@@ -3285,12 +3673,34 @@ function tick(){
   }
   if(mode==='corridor')updateHallLights();
 
+  if(epilogueActive){
+    // 台詞の後半に向かって、ごくゆっくり朝に近い光へ。
+    // 急な点滅は使わず、テープの揺らぎも明度差を小さく抑える。
+    const warmth=THREE.MathUtils.smoothstep(
+      dialogueIndex/Math.max(1,dramaLines.length-1),.45,1
+    );
+    const tapeBrightness=
+      1+Math.sin(epilogueTime*11.3)*.004+
+      Math.sin(epilogueTime*3.7)*.006;
+    mainLight.intensity=lerp(14,20,warmth)*tapeBrightness;
+    mainLight.color.set('#eee1c9');
+    diffuserMat.emissiveIntensity=.38;
+    scene.environmentIntensity=lerp(.095,.15,warmth);
+    fillLight.intensity=lerp(.14,.23,warmth);
+    windowLight.intensity=lerp(20,36,warmth);
+    deskLight.intensity=.60;
+    lampGlow.emissiveIntensity=.75;
+    renderer.toneMappingExposure=.93;
+  }
+
   renderer.render(
-    mode==='inspect'?inspectScene:mode==='corridor'?corridorScene:scene,
-    mode==='inspect'?inspectCamera:camera
+    epilogueActive?scene:
+      mode==='inspect'?inspectScene:mode==='corridor'?corridorScene:scene,
+    epilogueActive?epilogueCamera:
+      mode==='inspect'?inspectCamera:camera
   );
 
-  if(diskCarried && mode!=='inspect' &&
+  if(diskCarried && !epilogueActive && mode!=='inspect' &&
      endingStage!=='credits' && endingStage!=='finished'){
     renderer.autoClear=false;
     renderer.clearDepth();
