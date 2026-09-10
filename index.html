@@ -275,8 +275,7 @@
 <div id="paperModal">
   <article id="paperSheet">
     <button id="closePaper">閉じる ×</button>
-    <div class="stamp">PRIVATE / DEVELOPMENT MEMO / 01</div>
-    <h2>この部屋のコードについて</h2>
+    <div style="clear:both;height:28px" aria-hidden="true"></div>
     <div id="paperText"></div>
   </article>
 </div>
@@ -791,7 +790,14 @@ const memo=`これは架空の開発メモです。部屋を作った「開発�
 
 追伸。この長文を印刷して引き出しにしまったのは誰なんだろう。そこは、あまり深く考えないでほしい。`;
 
-$('#paperText').textContent=memo;
+// 引き出しには1枚だけ。特殊な部屋と同じ言葉が印刷されている。
+const drawerPrintedPhrase='そと あめ おもちゃやさん まほう もぐる ぼくのゆめ';
+const drawerPrintedText=Array.from(
+  {length:32},
+  ()=>drawerPrintedPhrase
+).join('\n');
+
+$('#paperText').textContent=drawerPrintedText;
 
 function wrapText(ctx,text,maxWidth){
   const lines=[];
@@ -811,23 +817,22 @@ const paperTexture=canvasTexture((c,s)=>{
   for(let i=0;i<9000;i++){
     c.fillStyle='#6a563408';c.fillRect(random()*s,random()*s,1,1);
   }
-  c.fillStyle='#6a6a5d';c.font='13px monospace';
-  c.fillText('PRIVATE / DEVELOPMENT MEMO',65,65);
-  c.fillStyle='#33352e';c.font='bold 28px sans-serif';
-  c.fillText('この部屋のコードについて',65,120);
-  c.fillRect(65,145,s-130,1);
-  c.font='15px sans-serif';
-  const lines=wrapText(c,memo,s-130);
-  lines.slice(0,41).forEach((l,i)=>c.fillText(l,65,180+i*19));
-  c.font='13px sans-serif';c.fillStyle='#737160';
-  c.fillText('クリックして全文を読む / 01',65,s-40);
+  // 見出しやページ番号は付けず、同じ文章だけを繰り返す。
+  c.fillStyle='#343339';
+  c.font='25px "Yu Gothic",sans-serif';
+  const lines=wrapText(c,drawerPrintedText,s-124);
+  lines.slice(0,32).forEach((line,i)=>{
+    c.fillText(line,62,70+i*28);
+  });
 },1024);
 const paper=mesh(new THREE.PlaneGeometry(.76,.66),
   material('#ffffff',.95,0,{map:paperTexture}),drawer,0,-.070,.015);
 paper.rotation.x=-Math.PI/2;
-actionable(paper,'印刷された開発メモを読む',()=>{
+actionable(paper,'引き出しの紙を読む',()=>{
   if(!drawerOpen)return;
-  paperVisible=true;$('#paperModal').style.display='block';
+  paperVisible=true;
+  $('#paperModal').style.display='block';
+  $('#paperModal').scrollTop=0;
 });
 $('#closePaper').onclick=()=>{
   paperVisible=false;$('#paperModal').style.display='none';
