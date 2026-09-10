@@ -279,6 +279,85 @@
     #back{top:17px;right:13px;font-size:11px;padding:9px}
   }
 </style>
+<script>
+(function(){
+  let displayed=false;
+
+  function showStartupError(message){
+    if(displayed)return;
+
+    function display(){
+      const loading=document.getElementById('loading');
+      if(!loading){
+        document.addEventListener('DOMContentLoaded',display,{once:true});
+        return;
+      }
+
+      // 起動後のエラーは、このロード画面には表示しない。
+      if(loading.style.display==='none')return;
+      displayed=true;
+
+      loading.replaceChildren();
+      loading.style.padding='24px';
+      loading.style.overflow='auto';
+      loading.style.textAlign='left';
+      loading.style.placeContent='center';
+      loading.style.background='#192026';
+
+      const title=document.createElement('strong');
+      title.textContent='部屋の初期化中にエラーが発生しました';
+      title.style.color='#ffd1ba';
+      title.style.fontSize='16px';
+
+      const explanation=document.createElement('p');
+      explanation.textContent=
+        '以下の内容をコピーして送ってください。エラーの場所を確認できます。';
+      explanation.style.fontSize='12px';
+
+      const details=document.createElement('pre');
+      details.textContent=message;
+      details.style.cssText=
+        'white-space:pre-wrap;overflow-wrap:anywhere;' +
+        'max-width:850px;max-height:60vh;overflow:auto;' +
+        'padding:16px;background:#0c141b;border:1px solid #ffffff25;' +
+        'border-radius:8px;color:#f2e9dd;font-size:12px;' +
+        'line-height:1.8;user-select:text;';
+
+      loading.append(title,explanation,details);
+    }
+
+    display();
+  }
+
+  window.addEventListener('error',function(event){
+    if(event instanceof ErrorEvent){
+      const stack=event.error && event.error.stack;
+      showStartupError(stack || [
+        event.message || '詳細不明のJavaScriptエラー',
+        'ファイル: '+(event.filename || '不明'),
+        '行: '+event.lineno+' / 列: '+event.colno
+      ].join('\n'));
+      return;
+    }
+
+    const target=event.target;
+    if(target && target.tagName==='SCRIPT'){
+      showStartupError(
+        'スクリプトを読み込めませんでした。\n'+
+        (target.src || 'module / importmap 内の読み込みを確認してください。')+
+        '\n\nネットワーク接続、CDNへのアクセス、ブラウザのコンソールも確認してください。'
+      );
+    }
+  },true);
+
+  window.addEventListener('unhandledrejection',function(event){
+    const reason=event.reason;
+    showStartupError(
+      reason && reason.stack ? reason.stack : String(reason)
+    );
+  });
+})();
+</script>
 <script type="importmap">
 {
   "imports":{
