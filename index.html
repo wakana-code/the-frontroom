@@ -104,7 +104,7 @@
   <small>AN EVENING ROOM / EXPLORATION</small>
   <h1>夕暮れの部屋</h1>
   <div id="objective">この部屋のどこかにある、アクリルのスターを探す。</div>
-  <div id="help">ドラッグ：見回す　／　クリック：調べる　／　下のボタン：移動</div>
+  <div id="help">WASD：移動　／　ドラッグ：見回す　／　クリック：調べる　／　下：視点移動</div>
 </div>
 
 <div id="nav">
@@ -857,8 +857,6 @@ const mattressMat=material('#d8d2bd',.99,0,{
   map:tiled(weaveTexture,4,5),bumpMap:tiled(weaveTexture,4,5),bumpScale:.009
 });
 box(1.84,.23,2.98,mattressMat,bed,0,.755,0);
-tube([[-.92,.81,-1.47],[.92,.81,-1.47],[.92,.81,1.47],[-.92,.81,1.47]],.012,
-  material('#e0dbc9',1),bed,true);
 
 const blanketMat=material('#607c7c',1,0,{
   map:tiled(weaveTexture,5,7),bumpMap:tiled(weaveTexture,5,7),bumpScale:.012,side:THREE.DoubleSide
@@ -868,8 +866,16 @@ const blanketGeo=new THREE.PlaneGeometry(2.10,2.19,45,45);
   const p=blanketGeo.attributes.position;
   for(let i=0;i<p.count;i++){
     const x=p.getX(i),y=p.getY(i);
-    const drape=Math.max(0,Math.abs(x)-.88)*1.55;
-    p.setZ(i,.015*Math.sin(x*22+y*5)+.008*Math.sin(y*28+x*7)-drape);
+    // 左端だけ、マットレスの角を越えてから垂らす。
+    // 右端の形状と、中央の布のうねりは変更しない。
+    const leftLift=.035*THREE.MathUtils.smoothstep(-x,.55,.88);
+    const drape=x<0
+      ? Math.max(0,-x-.95)*1.55
+      : Math.max(0,x-.88)*1.55;
+    p.setZ(i,
+      .015*Math.sin(x*22+y*5)+.008*Math.sin(y*28+x*7)
+      +leftLift-drape
+    );
   }
   blanketGeo.computeVertexNormals();
 }
@@ -1092,7 +1098,7 @@ function enterInspect(){
 function exitInspect(){
   mode='room';
   $('#nav').style.display='flex';$('#back').style.display='none';
-  $('#help').textContent='ドラッグ：見回す ／ クリック：調べる ／ 下のボタン：移動';
+  $('#help').textContent='WASD：移動 ／ ドラッグ：見回す ／ クリック：調べる ／ 下：視点移動';
   if(pouchOpen){
     worldPouch.flap.rotation.x=-2.12;
     worldPouch.star.visible=!found;
@@ -1145,6 +1151,139 @@ gotoView('room',true);
 document.querySelectorAll('#nav button').forEach(b=>{
   b.onclick=()=>gotoView(b.dataset.view);
 });
+
+// WASD：視線の上下角には影響されず、床と平行に移動する。
+const movementKeys=new Set();
+const movementCodes=new Set(['KeyW','KeyA','KeyS','KeyD']);
+const playerRadius=.16;
+
+function movementBlockedByUI(){
+  return mode!=='room' || paperVisible || $('#win').style.display==='grid';
+}
+
+addEventListener('keydown',e=>{
+  if(!movementCodes.has(e.code))return;
+  const target=e.target;
+  if(target instanceof HTMLElement &&
+     (target.isContentEditable ||
+      ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)))return;
+  if(movementBlockedByUI())return;
+  e.preventDefault();
+  movementKeys.add(e.code);
+});
+addEventListener('keyup',e=>{
+  movementKeys.delete(e.code);
+});
+addEventListener('blur',()=>movementKeys.clear());
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)movementKeys.clear();
+});
+
+function circleIntersectsBox(x,z,rect){
+  const closestX=clamp(x,rect.minX,rect.maxX);
+  const closestZ=clamp(z,rect.minZ,rect.maxZ);
+  return (x-closestX)**2+(z-closestZ)**2<playerRadius**2;
+}
+
+function canWalkAt(x,z,eyeY){
+  if(x < -3.96+playerRadius || x > 3.96-playerRadius ||
+     z < -3.96+playerRadius || z > 3.96-playerRadius)return false;
+
+  // 床から頭の少し上までを身体として扱う。
+  // 低い視点ではベッドの横桟・マットレスの下を通れる。
+  const headY=eyeY+.09;
+  const obstacles=[];
+  function obstacle(minX,maxX,minZ,maxZ,minY=0){
+    if(headY>minY)obstacles.push({minX,maxX,minZ,maxZ});
+  }
+
+  // 机と、開いた引き出し。
+  obstacle(-3.65,-1.45,-3.43,-2.37);
+  if(drawer.position.z>.08){
+    obstacle(-3.025,-1.975,
+      -2.9+drawer.position.z-.43,
+      -2.9+drawer.position.z+.48,.59);
+  }
+
+  // クローゼット本体。
+  obstacle(-.78,1.02,-3.90,-2.94);
+
+  // ベッドのフレームとマットレス。潜っている場合は通過可能。
+  obstacle(1.28,3.30,-2.89,.25,.49);
+  // ヘッドボードと脚は、低い視点でも避ける。
+  obstacle(1.25,3.33,-2.96,-2.84);
+  for(const lx of [-.86,.86]){
+    for(const lz of [-1.39,1.39]){
+      obstacle(
+        bed.position.x+lx-.055,bed.position.x+lx+.055,
+        bed.position.z+lz-.055,bed.position.z+lz+.055
+      );
+    }
+  }
+
+  // 移動させた小物・いすの位置にも追従する。
+  obstacle(
+    chair.position.x-.35,chair.position.x+.35,
+    chair.position.z-.34,chair.position.z+.34
+  );
+  obstacle(
+    trash.position.x-.19,trash.position.x+.19,
+    trash.position.z-.19,trash.position.z+.19
+  );
+
+  if(obstacles.some(rect=>circleIntersectsBox(x,z,rect)))return false;
+
+  // 開閉中の扉は、各扉のローカル座標で判定する。
+  for(const [door,sign] of [[leftDoor,1],[rightDoor,-1]]){
+    door.updateWorldMatrix(true,false);
+    const local=door.worldToLocal(new THREE.Vector3(x,eyeY,z));
+    const centerX=sign*cw/4;
+    const halfWidth=(cw/2-.025)/2;
+    if(circleIntersectsBox(local.x,local.z,{
+      minX:centerX-halfWidth,maxX:centerX+halfWidth,
+      minZ:-.035,maxZ:.078
+    }))return false;
+  }
+  return true;
+}
+
+function updateWalking(dt){
+  if(movementBlockedByUI()){
+    movementKeys.clear();
+    return;
+  }
+
+  const forward=Number(movementKeys.has('KeyW'))-Number(movementKeys.has('KeyS'));
+  const sideways=Number(movementKeys.has('KeyD'))-Number(movementKeys.has('KeyA'));
+  if(!forward && !sideways)return;
+
+  // 視点移動アニメーション中でも、キー入力を優先する。
+  cameraTravel=null;
+
+  const speed=currentView==='under'?.65:1.65;
+  const distance=speed*dt/Math.hypot(forward,sideways);
+  const dx=(-Math.sin(yaw)*forward+Math.cos(yaw)*sideways)*distance;
+  const dz=(-Math.cos(yaw)*forward-Math.sin(yaw)*sideways)*distance;
+
+  // 小分けに移動し、薄い障害物のすり抜けを防ぐ。
+  // X/Zを別々に判定することで、壁沿いには滑らかに歩ける。
+  const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.025));
+  for(let i=0;i<steps;i++){
+    const nextX=camera.position.x+dx/steps;
+    if(canWalkAt(nextX,camera.position.z,camera.position.y)){
+      camera.position.x=nextX;
+    }
+    const nextZ=camera.position.z+dz/steps;
+    if(canWalkAt(camera.position.x,nextZ,camera.position.y)){
+      camera.position.z=nextZ;
+    }
+  }
+
+  // 手動移動後は「固定視点にいる」という表示だけ外す。
+  document.querySelectorAll('#nav button.active').forEach(b=>{
+    b.classList.remove('active');
+  });
+}
 
 // レイキャスト。手前の非操作物は遮蔽物として扱う。
 const raycaster=new THREE.Raycaster();
@@ -1267,6 +1406,8 @@ function tick(){
     applyLook();
     if(t===1)cameraTravel=null;
   }
+
+  updateWalking(dt);
 
   // 点灯は速い。消灯は先に暖色へ寄り、その後に減衰。
   if(roomLightOn){
