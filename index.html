@@ -348,6 +348,13 @@ const TAU = Math.PI * 2;
 const clamp = THREE.MathUtils.clamp;
 const lerp = THREE.MathUtils.lerp;
 
+// smooth(開始値, 終了値, 現在値)
+// 開始値以下は0、終了値以上は1。
+// その間を、両端が滑らかになるように補間する。
+function smooth(start,end,value){
+  return THREE.MathUtils.smoothstep(value,start,end);
+}
+
 const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
 renderer.setSize(innerWidth, innerHeight);
