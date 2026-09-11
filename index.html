@@ -588,18 +588,398 @@ box(.045,.14,5.99,trim,scene,3.985,.07,-1.005);
 box(.045,.14,.99,trim,scene,3.985,.07,3.505);
 for(const z of [-3.985,3.985]) box(8,.14,.045,trim,scene,0,.07,z);
 
-// 外の夕空。
-const skyTexture=canvasTexture((c,s)=>{
-  const g=c.createLinearGradient(0,0,0,s);
-  g.addColorStop(0,'#233c62');g.addColorStop(.58,'#8ba1b0');
-  g.addColorStop(1,'#dec2a4');c.fillStyle=g;c.fillRect(0,0,s,s);
-  for(let i=0;i<26;i++){
-    const x=random()*s,h=30+random()*100;
-    c.fillStyle=i%2?'#485969':'#566473';c.fillRect(x,s-h,20+random()*40,h);
+// 窓の外に実際の奥行きを持つ住宅街を生成する。
+// 室内の窓は左壁にあるため、街はXが負になる方向に配置する。
+const outdoorRoot=group();
+const outdoorNightMaterials=[];
+const outdoorWindowMaterials=[];
+let outdoorNightAmount=0;
+let exteriorSeed=782193;
+
+function exteriorRandom(){
+  exteriorSeed=(Math.imul(exteriorSeed,1664525)+1013904223)>>>0;
+  return exteriorSeed/4294967296;
+}
+
+function outdoorMat(color,roughness=.8,metalness=0,extra={}){
+  const result=material(color,roughness,metalness,extra);
+  outdoorNightMaterials.push({
+    material:result,
+    dayColor:result.color.clone()
+  });
+  return result;
+}
+
+const outdoorConcreteTexture=canvasTexture((ctx,size)=>{
+  ctx.fillStyle='#b7b5ac';
+  ctx.fillRect(0,0,size,size);
+  for(let i=0;i<54000;i++){
+    const v=Math.floor(90+exteriorRandom()*100);
+    ctx.fillStyle=`rgba(${v},${v},${v-6},.19)`;
+    const r=.3+exteriorRandom()*1.7;
+    ctx.fillRect(exteriorRandom()*size,exteriorRandom()*size,r,r);
+  }
+  for(let i=0;i<24;i++){
+    const x=exteriorRandom()*size;
+    const y=exteriorRandom()*size;
+    ctx.strokeStyle='#474a4120';
+    ctx.lineWidth=.6;
+    ctx.beginPath();
+    ctx.moveTo(x,y);
+    ctx.lineTo(x+exteriorRandom()*19-9,y+8+exteriorRandom()*22);
+    ctx.stroke();
+  }
+},512);
+
+const outdoorBrickTexture=canvasTexture((ctx,size)=>{
+  ctx.fillStyle='#9c8f7b';
+  ctx.fillRect(0,0,size,size);
+  const brickW=64,brickH=28;
+  for(let row=0;row<Math.ceil(size/brickH);row++){
+    for(let col=-1;col<Math.ceil(size/brickW)+1;col++){
+      const shade=Math.floor(111+exteriorRandom()*31);
+      const x=col*brickW+(row%2)*brickW/2;
+      const y=row*brickH;
+      ctx.fillStyle=`rgb(${shade+22},${shade+7},${shade-9})`;
+      ctx.fillRect(x+2,y+2,brickW-4,brickH-4);
+      ctx.fillStyle='#ffffff12';
+      ctx.fillRect(x+3,y+3,brickW-6,1);
+      ctx.fillStyle='#24190d16';
+      ctx.fillRect(x+3,y+brickH-4,brickW-6,1);
+    }
+  }
+  for(let i=0;i<14000;i++){
+    ctx.fillStyle=exteriorRandom()>.5?'#ffffff09':'#0000000a';
+    ctx.fillRect(exteriorRandom()*size,exteriorRandom()*size,1,1);
+  }
+},512);
+
+function makeOutdoorSky(night){
+  return canvasTexture((ctx,size)=>{
+    const gradient=ctx.createLinearGradient(0,0,0,size);
+    if(night){
+      gradient.addColorStop(0,'#07101e');
+      gradient.addColorStop(.55,'#152539');
+      gradient.addColorStop(1,'#394149');
+    }else{
+      gradient.addColorStop(0,'#54799b');
+      gradient.addColorStop(.47,'#a3b7c5');
+      gradient.addColorStop(.78,'#e2c9b0');
+      gradient.addColorStop(1,'#c9bdb2');
+    }
+    ctx.fillStyle=gradient;
+    ctx.fillRect(0,0,size,size);
+
+    // 半透明の小さな筆致を重ねた薄い雲。
+    for(let band=0;band<10;band++){
+      const cy=140+exteriorRandom()*size*.58;
+      const cx=exteriorRandom()*size;
+      for(let i=0;i<95;i++){
+        const x=cx+(exteriorRandom()-.5)*650;
+        const y=cy+(exteriorRandom()-.5)*36;
+        const rx=20+exteriorRandom()*90;
+        const ry=2+exteriorRandom()*9;
+        ctx.fillStyle=night
+          ? 'rgba(99,115,130,.016)'
+          : 'rgba(249,225,200,.025)';
+        ctx.beginPath();
+        ctx.ellipse(x,y,rx,ry,-.035,0,TAU);
+        ctx.fill();
+      }
+    }
+
+    if(night){
+      for(let i=0;i<95;i++){
+        const x=exteriorRandom()*size;
+        const y=exteriorRandom()*size*.57;
+        ctx.fillStyle=`rgba(218,229,242,${.15+exteriorRandom()*.35})`;
+        ctx.fillRect(x,y,exteriorRandom()>.9?1.6:1,.9);
+      }
+    }
+  },1024);
+}
+
+const outdoorDaySky=makeOutdoorSky(false);
+const outdoorDarkSky=makeOutdoorSky(true);
+const outdoorSkyMaterial=new THREE.MeshBasicMaterial({
+  map:outdoorDaySky,
+  fog:false,
+  depthWrite:false,
+  toneMapped:false
+});
+const outdoorSky=mesh(
+  new THREE.PlaneGeometry(115,65),
+  outdoorSkyMaterial,
+  outdoorRoot,-48,15,0
+);
+outdoorSky.rotation.y=Math.PI/2;
+outdoorSky.castShadow=false;
+outdoorSky.receiveShadow=false;
+
+const outdoorConcrete=outdoorMat('#d4d1c4',.93,0,{
+  map:tiled(outdoorConcreteTexture,2,2),
+  bumpMap:tiled(outdoorConcreteTexture,2,2),
+  bumpScale:.003
+});
+const outdoorBrick=outdoorMat('#e0ccb2',.91,0,{
+  map:tiled(outdoorBrickTexture,2,2),
+  bumpMap:tiled(outdoorBrickTexture,2,2),
+  bumpScale:.005
+});
+const outdoorMetal=outdoorMat('#929d9e',.39,.64);
+const outdoorRoof=outdoorMat('#596166',.86);
+const outdoorSoil=outdoorMat('#716959',.99,0,{
+  map:tiled(outdoorConcreteTexture,3,3),
+  bumpMap:tiled(outdoorConcreteTexture,3,3),
+  bumpScale:.004
+});
+const outdoorPaving=outdoorMat('#aaa79c',.92,0,{
+  map:tiled(outdoorConcreteTexture,8,8),
+  bumpMap:tiled(outdoorConcreteTexture,8,8),
+  bumpScale:.003
+});
+const outdoorAsphalt=outdoorMat('#555b5c',.95,0,{
+  map:tiled(outdoorConcreteTexture,8,12),
+  bumpMap:tiled(outdoorConcreteTexture,8,12),
+  bumpScale:.004
+});
+
+// 地面を少し下げ、この部屋が地面より高い位置にある印象を作る。
+const outdoorGroundY=-1.15;
+box(37,.20,48,outdoorSoil,outdoorRoot,-23,outdoorGroundY-.12,0);
+box(4.4,.025,45,outdoorAsphalt,outdoorRoot,-11.7,outdoorGroundY,0);
+box(1.05,.12,45,outdoorPaving,outdoorRoot,-8.94,outdoorGroundY+.035,0);
+box(.16,.22,45,outdoorConcrete,outdoorRoot,-9.53,outdoorGroundY+.055,0);
+box(.16,.22,45,outdoorConcrete,outdoorRoot,-13.94,outdoorGroundY+.055,0);
+
+// 歩道の目地と排水溝。
+for(let i=0;i<28;i++){
+  box(1.04,.004,.012,outdoorRoof,outdoorRoot,
+    -8.94,outdoorGroundY+.099,-21+i*1.55);
+}
+for(let i=0;i<8;i++){
+  const drain=group(outdoorRoot);
+  drain.position.set(-9.43,outdoorGroundY+.17,-18+i*5);
+  box(.16,.015,.53,outdoorRoof,drain);
+  for(let j=0;j<7;j++){
+    box(.13,.005,.018,outdoorMetal,drain,0,.01,-.21+j*.07);
+  }
+}
+
+// 窓に近い庭の縁と、低い塀。
+box(.22,.78,15,outdoorBrick,outdoorRoot,-7.70,outdoorGroundY+.39,0);
+box(.34,.065,15.1,outdoorConcrete,outdoorRoot,
+  -7.70,outdoorGroundY+.81,0);
+
+// 向かいの建物。窓面が部屋の方向を向く。
+const outdoorGlassMaterials=[];
+for(let i=0;i<5;i++){
+  const glassMat=new THREE.MeshPhysicalMaterial({
+    color:['#859ca8','#718997','#a8ad9f','#627986','#a2afa9'][i],
+    roughness:.17,
+    metalness:.24,
+    clearcoat:.75,
+    clearcoatRoughness:.13,
+    envMapIntensity:.7
+  });
+  outdoorGlassMaterials.push(glassMat);
+  outdoorNightMaterials.push({
+    material:glassMat,
+    dayColor:glassMat.color.clone()
+  });
+}
+const warmWindow=new THREE.MeshStandardMaterial({
+  color:'#b9a680',
+  emissive:'#ffd29a',
+  emissiveIntensity:.10,
+  roughness:.73
+});
+const coolWindow=new THREE.MeshStandardMaterial({
+  color:'#9aa9b1',
+  emissive:'#bfd8ee',
+  emissiveIntensity:.035,
+  roughness:.73
+});
+outdoorWindowMaterials.push(
+  {material:warmWindow,day:.10,night:.72},
+  {material:coolWindow,day:.035,night:.25}
+);
+
+function addOutdoorWindow(parent,x,y,z,index,balcony=false){
+  const frame=group(parent);
+  frame.position.set(x,y,z);
+  frame.rotation.y=Math.PI/2;
+  const width=1.10,height=1.32;
+
+  // 暗い窓のくぼみと、奥にあるカーテン。
+  box(width+.13,height+.13,.12,outdoorRoof,frame,0,0,-.045);
+  const lit=index%5===0;
+  box(width-.10,height-.10,.016,
+    lit?warmWindow:coolWindow,frame,0,0,-.009);
+  for(let i=0;i<7;i++){
+    box(.032,height-.11,.015,
+      lit?warmWindow:outdoorConcrete,
+      frame,-.42+i*.14,0,.002);
+  }
+
+  const glass=mesh(
+    new THREE.PlaneGeometry(width-.09,height-.09),
+    outdoorGlassMaterials[index%outdoorGlassMaterials.length],
+    frame,0,0,.018
+  );
+  glass.castShadow=false;
+
+  for(const xx of [-width/2,width/2,0]){
+    box(.035,height,.038,outdoorMetal,frame,xx,0,.038);
+  }
+  for(const yy of [-height/2,height/2]){
+    box(width+.075,.04,.075,outdoorMetal,frame,0,yy,.031);
+  }
+  box(width+.22,.06,.24,outdoorConcrete,frame,0,-height/2-.055,.072);
+
+  if(balcony){
+    box(width+.72,.11,.87,outdoorConcrete,frame,0,-height/2-.20,.32);
+    box(width+.64,.035,.035,outdoorMetal,frame,0,-.14,.68);
+    for(let i=0;i<9;i++){
+      box(.018,.62,.023,outdoorMetal,frame,-.78+i*.195,-.44,.68);
+    }
+  }
+}
+
+function addOutdoorBuilding(x,z,width,depth,floors,index){
+  const building=group(outdoorRoot);
+  building.position.set(x,outdoorGroundY,z);
+  const height=floors*2.62+.35;
+  const bodyMaterial=index%2?outdoorConcrete:outdoorBrick;
+
+  box(depth,height,width,bodyMaterial,building,0,height/2,0);
+  box(depth+.22,.15,width+.25,outdoorRoof,building,0,height+.055,0);
+  box(.16,.33,width+.16,outdoorConcrete,building,depth/2,height+.23,0);
+
+  const columns=Math.max(2,Math.floor(width/2));
+  for(let floor=0;floor<floors;floor++){
+    for(let col=0;col<columns;col++){
+      const wz=-width/2+(col+.5)*width/columns;
+      addOutdoorWindow(
+        building,depth/2+.031,1.40+floor*2.62,wz,
+        index*31+floor*7+col,
+        floor>0 && (col+index)%3===0
+      );
+    }
+  }
+
+  // 雨樋、屋上の設備、外壁の小さな換気口。
+  cylinder(.033,.033,height,outdoorMetal,
+    building,depth/2+.09,height/2,-width/2+.18,12);
+  box(.62,.48,.94,outdoorConcrete,
+    building,-.26,height+.33,width*.19);
+  box(.65,.045,.98,outdoorMetal,
+    building,-.26,height+.59,width*.19);
+
+  for(let i=0;i<3;i++){
+    box(.07,.23,.44,outdoorRoof,building,
+      depth/2+.035,.76+i*.58,width/2-.48);
+  }
+}
+
+addOutdoorBuilding(-18.7,-8.0,6.6,4.8,3,0);
+addOutdoorBuilding(-19.9,-.65,6.4,5.0,2,1);
+addOutdoorBuilding(-18.8,6.7,6.7,4.9,3,2);
+addOutdoorBuilding(-28.5,-10.5,8.0,5.8,4,3);
+addOutdoorBuilding(-29.0,1.0,9.1,6.2,4,4);
+addOutdoorBuilding(-29.6,12.1,7.8,5.8,3,5);
+
+// 庭の木。単一の大きな球ではなく、枝と多数の小さな葉の塊。
+const outdoorBark=outdoorMat('#6d5842',.94,0,{
+  map:woodTexture,bumpMap:woodTexture,bumpScale:.003
+});
+const outdoorLeafMaterials=['#65774e','#526b47','#7a8556'].map(color=>
+  outdoorMat(color,.97)
+);
+
+function addOutdoorTree(x,z,height){
+  const tree=group(outdoorRoot);
+  tree.position.set(x,outdoorGroundY,z);
+  cylinder(.075,.15,height,outdoorBark,tree,0,height/2,0,12);
+
+  for(let branch=0;branch<6;branch++){
+    const a=branch*2.4;
+    const bx=Math.cos(a)*.65;
+    const bz=Math.sin(a)*.65;
+    const by=height*.57+branch*.11;
+    tube([
+      [0,by-.45,0],
+      [bx*.45,by,bz*.45],
+      [bx,by+.3,bz]
+    ],.025,outdoorBark,tree);
+  }
+
+  for(let i=0;i<42;i++){
+    const angle=exteriorRandom()*TAU;
+    const radius=Math.sqrt(exteriorRandom())*.90;
+    const leaf=mesh(
+      new THREE.IcosahedronGeometry(.24+exteriorRandom()*.17,1),
+      outdoorLeafMaterials[i%3],
+      tree,
+      Math.cos(angle)*radius,
+      height-.3+exteriorRandom()*1.1,
+      Math.sin(angle)*radius
+    );
+    leaf.scale.set(1,.62+exteriorRandom()*.7,.82);
+    leaf.rotation.set(exteriorRandom(),exteriorRandom()*3,exteriorRandom());
+  }
+}
+
+addOutdoorTree(-6.43,-2.68,2.5);
+addOutdoorTree(-6.75,3.10,2.9);
+addOutdoorTree(-15.0,4.4,3.4);
+addOutdoorTree(-15.0,-5.5,3.8);
+
+// 歩道の街灯。電球は夜の異変で強く光る。
+const outdoorBulb=new THREE.MeshStandardMaterial({
+  color:'#e6d4a8',
+  emissive:'#ffdb9f',
+  emissiveIntensity:.08,
+  roughness:.4
+});
+outdoorWindowMaterials.push({
+  material:outdoorBulb,day:.08,night:1.8
+});
+for(const z of [-9,8]){
+  cylinder(.035,.065,3.9,outdoorMetal,outdoorRoot,
+    -9.07,outdoorGroundY+1.95,z,16);
+  tube([
+    [-9.07,outdoorGroundY+3.9,z],
+    [-9.15,outdoorGroundY+4.08,z],
+    [-9.61,outdoorGroundY+4.05,z]
+  ],.034,outdoorMetal,outdoorRoot);
+  box(.45,.075,.22,outdoorRoof,outdoorRoot,
+    -9.59,outdoorGroundY+3.98,z);
+  box(.34,.014,.16,outdoorBulb,outdoorRoot,
+    -9.59,outdoorGroundY+3.934,z);
+}
+
+// 屋外は室内の天井灯による影計算の対象から外す。
+// 大量の遠景を6面シャドウへ描き込まないための軽量化。
+outdoorRoot.traverse(object=>{
+  if(object.isMesh){
+    object.castShadow=false;
+    object.receiveShadow=false;
   }
 });
-const sky=mesh(new THREE.PlaneGeometry(4,4),new THREE.MeshBasicMaterial({map:skyTexture}),scene,-4.6,1.8,0);
-sky.rotation.y=Math.PI/2;
+
+function setOutdoorNight(amount){
+  outdoorNightAmount=amount;
+  outdoorSkyMaterial.map=amount>.5?outdoorDarkSky:outdoorDaySky;
+  outdoorSkyMaterial.color.setScalar(amount>.5?.68:1);
+  for(const entry of outdoorNightMaterials){
+    entry.material.color.copy(entry.dayColor);
+    entry.material.color.multiplyScalar(lerp(1,.19,amount));
+  }
+  for(const entry of outdoorWindowMaterials){
+    entry.material.emissiveIntensity=lerp(entry.day,entry.night,amount);
+  }
+}
 
 const windowFrame=group();
 windowFrame.position.set(-3.99,1.76,0);windowFrame.rotation.y=Math.PI/2;
@@ -736,6 +1116,7 @@ box(.016,.004,.002,led,switchGroup,0,-.052,.035);
 
 actionable(switchGroup,'照明スイッチ：ON / OFF',()=>{
   roomLightOn=!roomLightOn;
+  scheduleDarkRoomLightOff();
   if(!roomLightOn) lightOffAge=0;
   animateTo(rocker.rotation,{x:roomLightOn?-.12:.12},.12);
   toast(roomLightOn?'パチッ。部屋の照明をつけた。':'暖かな余韻を残して、照明が消えていく。',1900);
@@ -1423,11 +1804,119 @@ for(const object of wardrobe.children){
 // 異変の描画・状態。最初の部屋では、すべて無効。
 let activeAnomaly='normal';
 const ANOMALY_CHANCE=.55;
+
+// 上下逆さの家具を格納する親。
+// 初期構築の最後に、既存の家具セットをまとめて入れる。
+const invertedInteriorRoot=group();
+let invertedInteriorReady=false;
+
+let darkRoomOffTime=Infinity;
+let darkRoomSwitchCount=0;
+let darkRoomSavedLighting=null;
+
+function isEnglishFrontroom(){
+  return document.documentElement.lang.startsWith('en');
+}
+
+function scheduleDarkRoomLightOff(){
+  if(activeAnomaly!=='dark' || !roomLightOn){
+    darkRoomOffTime=Infinity;
+    return;
+  }
+  darkRoomSwitchCount++;
+  const delay=2.25+
+    (Math.sin((activeRoomIndex+1)*13.1+darkRoomSwitchCount*4.17)*.5+.5)*1.55;
+  darkRoomOffTime=time+delay;
+}
+
+function resetAdditionalRoomEffects(){
+  if(invertedInteriorReady){
+    invertedInteriorRoot.rotation.set(0,0,0);
+    invertedInteriorRoot.position.set(0,0,0);
+  }
+
+  if(darkRoomSavedLighting){
+    roomLightOn=darkRoomSavedLighting.room;
+    lampOn=darkRoomSavedLighting.lamp;
+    lightAmount=roomLightOn?1:0;
+    rocker.rotation.x=roomLightOn?-.12:.12;
+    deskLight.intensity=lampOn?1.15:0;
+    lampGlow.emissiveIntensity=lampOn?1.5:0;
+    darkRoomSavedLighting=null;
+  }
+
+  darkRoomOffTime=Infinity;
+  setOutdoorNight(0);
+}
+
+function activateAdditionalRoomEffects(){
+  if(activeAnomaly==='inverted' && invertedInteriorReady){
+    // 部屋の床と天井の中間を中心に180度反転する。
+    invertedInteriorRoot.position.set(0,3.25,0);
+    invertedInteriorRoot.rotation.set(0,0,Math.PI);
+  }
+
+  if(activeAnomaly==='dark'){
+    darkRoomSavedLighting={
+      room:roomLightOn,
+      lamp:lampOn
+    };
+    roomLightOn=false;
+    lightAmount=0;
+    lightOffAge=9;
+    darkRoomOffTime=Infinity;
+    rocker.rotation.x=.12;
+    lampOn=true;
+    deskLight.intensity=1.15;
+    lampGlow.emissiveIntensity=1.5;
+    setOutdoorNight(1);
+  }
+
+  scene.updateMatrixWorld(true);
+}
+
+function updateAdditionalRoomLighting(){
+  // 上下逆さの部屋では天井灯本体と主光源の位置を合わせる。
+  if(activeAnomaly==='inverted'){
+    mainLight.position.set(0,.32,-.15);
+  }else{
+    mainLight.position.set(0,2.93,-.15);
+  }
+
+  if(activeAnomaly!=='dark'){
+    // エピローグの明るさは、この後の既存処理で別途設定される。
+    windowLight.intensity=32;
+    return;
+  }
+
+  if(roomLightOn && time>=darkRoomOffTime){
+    roomLightOn=false;
+    lightOffAge=0;
+    darkRoomOffTime=Infinity;
+    animateTo(rocker.rotation,{x:.12},.13);
+
+    if(mode==='room' && endingStage==='none'){
+      toast(isEnglishFrontroom()
+        ? 'A small click. The room light goes out again.'
+        : '小さく、カチッ。つけたはずの灯りが、また消えた。',
+        2400);
+    }
+  }
+
+  // 主照明が消えたあとは、机のランプが主役。
+  // 完全な黒画面にしない程度にだけ、夜の環境光を残す。
+  windowLight.intensity=.20;
+  fillLight.intensity=.012+.17*lightAmount;
+  scene.environmentIntensity=.008+.16*lightAmount;
+  previewRoomLight.intensity=38*lightAmount;
+}
 const anomalyNames={
   normal:'異変のない部屋',
   rain:'雨の降る部屋',
   floating:'椅子の浮く部屋',
   yellow:'黄色い部屋',
+  inverted:'上下逆さの部屋',
+  dark:'灯りが消える部屋',
   special:'ぼくのゆめ'
 };
 
@@ -1626,10 +2115,13 @@ function chooseRoomAnomaly(index){
   if(index===SPECIAL_ROOM_INDEX)return 'special';
   const rng=roomRandom(index+971);
   if(rng()>=ANOMALY_CHANCE)return 'normal';
-  return ['rain','floating','yellow'][Math.floor(rng()*3)];
+  return ['rain','floating','yellow','inverted','dark'][
+    Math.floor(rng()*5)
+  ];
 }
 
 function resetAnomalyBeforeLayout(){
+  resetAdditionalRoomEffects();
   specialRoomRoot.visible=false;
   for(const root of [deskLayoutRoot,wardrobeLayoutRoot,bedLayoutRoot]){
     root.visible=true;
@@ -1741,6 +2233,7 @@ function activateRoomAnomaly(index){
   // 廊下側の部屋プレビューを作る前に、
   // 室内側と外側のマテリアルを確定させる。
   updateRoomWallSides();
+  activateAdditionalRoomEffects();
   syncRoomPouch();
 }
 
@@ -2626,6 +3119,12 @@ function gotoView(name,instant=false){
     toast('廊下ではWASDで移動。ドアから部屋へ入ると、家具の視点ボタンを使える。');
     return;
   }
+  if(activeAnomaly==='inverted' && name!=='room' && name!=='switch'){
+    toast(isEnglishFrontroom()
+      ? 'The furniture is above you. Explore on foot and look up.'
+      : '家具は頭の上にある。歩きながら、見上げて調べよう。');
+    return;
+  }
   if(activeAnomaly==='special' && name!=='room' && name!=='switch'){
     toast('この部屋では家具が壁や天井から生えている。WASDで歩いて調べよう。');
     return;
@@ -2707,6 +3206,22 @@ function canWalkAt(x,z,eyeY){
   if(z < -3.96+playerRadius || z > 3.96-playerRadius ||
      x < -3.96+playerRadius)return false;
   if(x>3.96-playerRadius && !doorway)return false;
+
+  if(activeAnomaly==='inverted'){
+    if(collidesWithDoorPanel(roomDoorPanel,x,z,eyeY))return false;
+
+    // 大きな家具単位で、実際の上下反転後の位置を判定。
+    invertedInteriorRoot.updateWorldMatrix(true,true);
+    for(const object of [desk,chair,trash,wardrobe,bed]){
+      const bounds=new THREE.Box3().setFromObject(object);
+      if(bounds.min.y>=eyeY+.09 || bounds.max.y<=.08)continue;
+      if(circleIntersectsBox(x,z,{
+        minX:bounds.min.x,maxX:bounds.max.x,
+        minZ:bounds.min.z,maxZ:bounds.max.z
+      }))return false;
+    }
+    return true;
+  }
 
   if(activeAnomaly==='special'){
     // 通常の家具セットは非表示なので、その当たり判定も使わない。
@@ -3217,6 +3732,12 @@ function updateAreaCrossing(){
       rain:'天井の内側から雨が降っている。足元には、薄く水が溜まっている。',
       floating:'部屋の中央で、椅子が静かに浮いている。',
       yellow:'壁も床も、淡く鮮やかな黄色に変わっている。',
+      inverted:isEnglishFrontroom()
+        ? 'The furniture hangs overhead. The ceiling light is down by the floor.'
+        : '家具が頭の上にある。天井にあるはずの灯りは、床の近くにあった。',
+      dark:isEnglishFrontroom()
+        ? 'Night lies beyond the window. Only the desk lamp is on.'
+        : '窓の向こうは夜だった。机のランプだけが、静かに点いている。',
       special:'真っ白な部屋。乱れた文字と、壁から生えた家具。足元では、同じ言葉が何度も繰り返されている。'
     };
     toast(`部屋 ${roomNumber}。${descriptions[activeAnomaly]}`,4200);
@@ -4074,6 +4595,7 @@ function tick(){
   fillLight.intensity=.105+.125*lightAmount;
   previewRoomLight.intensity=38*lightAmount;
   previewRoomLight.color.copy(mainLight.color);
+  updateAdditionalRoomLighting();
 
   // カーテンの縦ひだ + 低周波の揺れ + 小さな不規則なうねり。
   for(const {m,base,side} of curtains){
@@ -4177,6 +4699,54 @@ addEventListener('resize',()=>{
   camera.aspect=inspectCamera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();inspectCamera.updateProjectionMatrix();
 });
+
+// 上下逆さの部屋では、家具一式と天井灯を反転する。
+// 外壁・窓・ドア・操作用スイッチ・屋外は反転させない。
+scene.updateMatrixWorld(true);
+for(const object of [
+  deskLayoutRoot,
+  wardrobeLayoutRoot,
+  bedLayoutRoot,
+  ceilingLightBody
+]){
+  invertedInteriorRoot.attach(object);
+}
+invertedInteriorReady=true;
+
+// 逆さまの部屋では、取り外した服が突然床へ移動したり、
+// 天井のポーチへ検査画面で瞬間移動したりしないようにする。
+const invertedActionRoots=[
+  deskLayoutRoot,
+  wardrobeLayoutRoot,
+  bedLayoutRoot
+];
+for(const root of invertedActionRoots){
+  root.traverse(object=>{
+    if(!object.userData.action)return;
+    const originalAction=object.userData.action;
+    object.userData.action=function(...args){
+      if(activeAnomaly==='inverted'){
+        toast(isEnglishFrontroom()
+          ? 'It is overhead. Nothing seems to be falling.'
+          : '頭の上にある。けれど、落ちてくる気配はない。',
+          2300);
+        return;
+      }
+      return originalAction.apply(this,args);
+    };
+  });
+}
+
+// 窓の遠景を表示できるよう、カメラの描画距離を延長。
+// 室内の近い物を見る精度を維持するため、nearは変更しない。
+camera.far=110;
+camera.updateProjectionMatrix();
+epilogueCamera.far=110;
+epilogueCamera.updateProjectionMatrix();
+
+setOutdoorNight(0);
+scene.updateMatrixWorld(true);
+refreshRoomPreview();
 
 // 最初のフレームを描画してから、ロード表示を外す。
 renderer.render(scene,camera);
