@@ -348,13 +348,6 @@ const TAU = Math.PI * 2;
 const clamp = THREE.MathUtils.clamp;
 const lerp = THREE.MathUtils.lerp;
 
-// smooth(開始値, 終了値, 現在値)
-// 開始値以下は0、終了値以上は1。
-// その間を、両端が滑らかになるように補間する。
-function smooth(start,end,value){
-  return THREE.MathUtils.smoothstep(value,start,end);
-}
-
 const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
 renderer.setSize(innerWidth, innerHeight);
@@ -665,14 +658,14 @@ function makeOutdoorSky(night){
   return canvasTexture((ctx,size)=>{
     const gradient=ctx.createLinearGradient(0,0,0,size);
     if(night){
-      gradient.addColorStop(0,'#050b12');
-      gradient.addColorStop(.55,'#111d29');
-      gradient.addColorStop(1,'#29323b');
+      gradient.addColorStop(0,'#07101e');
+      gradient.addColorStop(.55,'#152539');
+      gradient.addColorStop(1,'#394149');
     }else{
-      gradient.addColorStop(0,'#354650');
-      gradient.addColorStop(.47,'#677981');
-      gradient.addColorStop(.78,'#909d9e');
-      gradient.addColorStop(1,'#a2aaa5');
+      gradient.addColorStop(0,'#54799b');
+      gradient.addColorStop(.47,'#a3b7c5');
+      gradient.addColorStop(.78,'#e2c9b0');
+      gradient.addColorStop(1,'#c9bdb2');
     }
     ctx.fillStyle=gradient;
     ctx.fillRect(0,0,size,size);
@@ -695,18 +688,13 @@ function makeOutdoorSky(night){
       }
     }
 
-    // 厚い雨雲。夜でも星は見せない。
-    for(let i=0;i<145;i++){
-      const x=exteriorRandom()*size;
-      const y=exteriorRandom()*size*.85;
-      const radius=70+exteriorRandom()*220;
-      const cloud=ctx.createRadialGradient(x,y,0,x,y,radius);
-      cloud.addColorStop(0,night
-        ? 'rgba(3,9,17,.09)'
-        : 'rgba(31,48,60,.055)');
-      cloud.addColorStop(1,'rgba(20,35,48,0)');
-      ctx.fillStyle=cloud;
-      ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
+    if(night){
+      for(let i=0;i<95;i++){
+        const x=exteriorRandom()*size;
+        const y=exteriorRandom()*size*.57;
+        ctx.fillStyle=`rgba(218,229,242,${.15+exteriorRandom()*.35})`;
+        ctx.fillRect(x,y,exteriorRandom()>.9?1.6:1,.9);
+      }
     }
   },1024);
 }
@@ -983,21 +971,14 @@ outdoorRoot.traverse(object=>{
 function setOutdoorNight(amount){
   outdoorNightAmount=amount;
   outdoorSkyMaterial.map=amount>.5?outdoorDarkSky:outdoorDaySky;
-  outdoorSkyMaterial.color.setScalar(amount>.5?.62:.83);
-
-  const rainyGray=new THREE.Color('#899a9c');
+  outdoorSkyMaterial.color.setScalar(amount>.5?.68:1);
   for(const entry of outdoorNightMaterials){
     entry.material.color.copy(entry.dayColor);
-    entry.material.color.lerp(rainyGray,.21);
-    entry.material.color.multiplyScalar(lerp(.79,.15,amount));
+    entry.material.color.multiplyScalar(lerp(1,.19,amount));
   }
   for(const entry of outdoorWindowMaterials){
-    entry.material.emissiveIntensity=lerp(
-      Math.max(entry.day,.12),entry.night,amount
-    );
+    entry.material.emissiveIntensity=lerp(entry.day,entry.night,amount);
   }
-
-  // 距離別の雨霞に使う色は、updateExteriorStormから参照する。
 }
 
 const windowFrame=group();
@@ -1007,29 +988,10 @@ for(const y of [-1.17,1.17]) box(2.4,.075,.11,trim,windowFrame,0,y,0);
 box(.055,2.3,.08,trim,windowFrame);
 box(2.3,.045,.08,trim,windowFrame,0,.15,0);
 box(2.5,.055,.27,trim,windowFrame,0,-1.19,.07);
-// 不透明度で外を白く塗りつぶすのではなく、透過・粗さ・凹凸でにじませる。
-// 水滴のBumpテクスチャは初期構築の最後に接続する。
-const wetWindowMaterial=new THREE.MeshPhysicalMaterial({
-  color:'#d6e0df',
-  roughness:.235,
-  metalness:0,
-  transmission:.97,
-  thickness:.15,
-  ior:1.333,
-  attenuationColor:'#afc2bd',
-  attenuationDistance:5,
-  clearcoat:.85,
-  clearcoatRoughness:.16,
-  envMapIntensity:.55,
-  side:THREE.DoubleSide
-});
-const wetWindowGlass=mesh(
-  new THREE.PlaneGeometry(2.27,2.26),
-  wetWindowMaterial,
-  windowFrame,0,0,-.04
-);
-wetWindowGlass.castShadow=false;
-wetWindowGlass.receiveShadow=false;
+mesh(new THREE.PlaneGeometry(2.27,2.26),new THREE.MeshPhysicalMaterial({
+  color:'#d6e4e8',transparent:true,opacity:.16,roughness:.08,
+  metalness:.08,side:THREE.DoubleSide,depthWrite:false
+}),windowFrame,0,0,-.04);
 
 // カーテン。裾ほどよく揺れ、複数の非同期の波で周期感を薄める。
 const curtainMat=material('#e8dfc7',.98,0,{
@@ -4634,7 +4596,6 @@ function tick(){
   previewRoomLight.intensity=38*lightAmount;
   previewRoomLight.color.copy(mainLight.color);
   updateAdditionalRoomLighting();
-  updateExteriorStorm(dt);
 
   // カーテンの縦ひだ + 低周波の揺れ + 小さな不規則なうねり。
   for(const {m,base,side} of curtains){
@@ -4784,466 +4745,6 @@ epilogueCamera.far=110;
 epilogueCamera.updateProjectionMatrix();
 
 setOutdoorNight(0);
-scene.updateMatrixWorld(true);
-refreshRoomPreview();
-
-// ------------------------------------------------------------
-// 窓の外の豪雨と、ガラスを伝う水滴
-// ------------------------------------------------------------
-
-let exteriorStormSeed=607381;
-function stormRandom(){
-  exteriorStormSeed=
-    (Math.imul(exteriorStormSeed,1664525)+1013904223)>>>0;
-  return exteriorStormSeed/4294967296;
-}
-
-// 水滴は固定個数を再利用。
-// Canvasの輝度は水の高さとして扱い、色画像には使わない。
-const wetGlassCanvas=document.createElement('canvas');
-wetGlassCanvas.width=768;
-wetGlassCanvas.height=768;
-const wetGlassContext=wetGlassCanvas.getContext('2d');
-const wetGlassSize=768;
-
-wetGlassContext.fillStyle='#808080';
-wetGlassContext.fillRect(0,0,wetGlassSize,wetGlassSize);
-
-const wetGlassTexture=new THREE.CanvasTexture(wetGlassCanvas);
-wetGlassTexture.colorSpace=THREE.NoColorSpace;
-wetGlassTexture.minFilter=THREE.LinearFilter;
-wetGlassTexture.magFilter=THREE.LinearFilter;
-wetGlassTexture.generateMipmaps=false;
-wetGlassTexture.anisotropy=Math.min(
-  8,renderer.capabilities.getMaxAnisotropy()
-);
-wetWindowMaterial.bumpMap=wetGlassTexture;
-wetWindowMaterial.bumpScale=.016;
-wetWindowMaterial.needsUpdate=true;
-
-const windowDroplets=[];
-const WINDOW_DROP_COUNT=195;
-let wetGlassFrameTime=0;
-let wetGlassElapsed=0;
-
-function resetWindowDroplet(drop,anywhere=false){
-  drop.x=14+stormRandom()*(wetGlassSize-28);
-  drop.y=anywhere
-    ? stormRandom()*wetGlassSize
-    : -16+stormRandom()*wetGlassSize*.40;
-  drop.radius=1.5+Math.pow(stormRandom(),2)*4.3;
-  if(anywhere && stormRandom()>.88){
-    drop.radius=7+stormRandom()*6;
-  }
-  drop.vx=0;
-  drop.vy=0;
-  drop.phase=stormRandom()*TAU;
-  drop.feed=.09+stormRandom()*.30;
-  drop.previousX=drop.x;
-  drop.previousY=drop.y;
-  drop.merged=false;
-}
-
-for(let i=0;i<WINDOW_DROP_COUNT;i++){
-  const drop={};
-  resetWindowDroplet(drop,true);
-  windowDroplets.push(drop);
-}
-
-// 接触判定用の空間分割。
-// 全水滴同士を毎フレーム総当たりしない。
-const windowDropGrid=new Map();
-const WINDOW_GRID_CELL=40;
-function windowGridKey(x,y){
-  return `${x},${y}`;
-}
-
-function updateWindowDroplets(dt,wind,rainStrength){
-  wetGlassElapsed+=dt;
-  windowDropGrid.clear();
-
-  for(const drop of windowDroplets){
-    drop.merged=false;
-    drop.previousX=drop.x;
-    drop.previousY=drop.y;
-
-    // 小さな水滴は表面張力で留まり、少しずつ成長する。
-    drop.radius+=drop.feed*rainStrength*dt;
-
-    // 一定サイズを超えると流れ始める。
-    const moving=smooth(4.4,7.2,drop.radius);
-    const targetSpeed=
-      moving*(15+Math.pow(Math.max(0,drop.radius-4),1.34)*7);
-
-    const pulse=
-      .86+
-      Math.sin(wetGlassElapsed*1.15+drop.phase)*.10+
-      Math.sin(wetGlassElapsed*2.31+drop.phase*2.3)*.04;
-
-    drop.vy=lerp(
-      drop.vy,targetSpeed*pulse,
-      1-Math.exp(-dt*3.8)
-    );
-
-    const sideways=moving*(
-      wind*5+
-      Math.sin(drop.y*.028+drop.phase)*3.4+
-      Math.sin(wetGlassElapsed*.67+drop.phase*1.7)*1.9
-    );
-    drop.vx=lerp(drop.vx,sideways,1-Math.exp(-dt*2.8));
-    drop.x+=drop.vx*dt;
-    drop.y+=drop.vy*dt;
-
-    // 流れている間は、水の一部を細い跡として残す。
-    if(drop.vy>8){
-      drop.radius=Math.max(
-        4.5,drop.radius-dt*.17*(drop.vy/70)
-      );
-    }
-
-    if(drop.y>wetGlassSize+24 ||
-       drop.x< -20 || drop.x>wetGlassSize+20){
-      resetWindowDroplet(drop);
-    }
-
-    const gx=Math.floor(drop.x/WINDOW_GRID_CELL);
-    const gy=Math.floor(drop.y/WINDOW_GRID_CELL);
-    const key=windowGridKey(gx,gy);
-    if(!windowDropGrid.has(key))windowDropGrid.set(key,[]);
-    windowDropGrid.get(key).push(drop);
-  }
-
-  // 接触した水滴を合体。
-  // 面積を足し、大きくなった水滴が自然に加速する。
-  for(const drop of windowDroplets){
-    if(drop.merged)continue;
-    const gx=Math.floor(drop.x/WINDOW_GRID_CELL);
-    const gy=Math.floor(drop.y/WINDOW_GRID_CELL);
-
-    for(let dx=-1;dx<=1;dx++){
-      for(let dy=-1;dy<=1;dy++){
-        const neighbors=windowDropGrid.get(windowGridKey(gx+dx,gy+dy));
-        if(!neighbors)continue;
-
-        for(const other of neighbors){
-          if(other===drop || other.merged || drop.merged)continue;
-          const distance=Math.hypot(drop.x-other.x,drop.y-other.y);
-          if(distance>(drop.radius+other.radius)*.70)continue;
-
-          const areaA=drop.radius*drop.radius;
-          const areaB=other.radius*other.radius;
-          const total=areaA+areaB;
-
-          drop.x=(drop.x*areaA+other.x*areaB)/total;
-          drop.y=(drop.y*areaA+other.y*areaB)/total;
-          drop.radius=Math.min(23,Math.sqrt(total));
-          drop.vy=Math.max(drop.vy,other.vy)+5;
-          drop.vx=(drop.vx*areaA+other.vx*areaB)/total;
-          other.merged=true;
-        }
-      }
-    }
-  }
-
-  const ctx=wetGlassContext;
-
-  // 毎フレーム完全消去せず、流れ跡が徐々に薄くなるようにする。
-  // 乾く速さはフレームレートではなく経過時間に依存。
-  const fade=1-Math.exp(-dt*2.7);
-  ctx.fillStyle=`rgba(128,128,128,${fade})`;
-  ctx.fillRect(0,0,wetGlassSize,wetGlassSize);
-  ctx.lineCap='round';
-  ctx.lineJoin='round';
-
-  for(const drop of windowDroplets){
-    if(drop.merged){
-      resetWindowDroplet(drop,true);
-      continue;
-    }
-
-    if(drop.vy>7){
-      const length=Math.hypot(
-        drop.x-drop.previousX,
-        drop.y-drop.previousY
-      );
-      if(length<65){
-        ctx.strokeStyle='rgba(192,192,192,.42)';
-        ctx.lineWidth=Math.max(.8,drop.radius*.28);
-        ctx.beginPath();
-        ctx.moveTo(drop.previousX,drop.previousY);
-        ctx.quadraticCurveTo(
-          (drop.previousX+drop.x)*.5+
-            Math.sin(drop.phase+wetGlassElapsed)*1.4,
-          (drop.previousY+drop.y)*.5,
-          drop.x,drop.y
-        );
-        ctx.stroke();
-      }
-    }
-
-    const stretch=1+clamp(drop.vy/180,0,.48);
-    ctx.save();
-    ctx.translate(drop.x,drop.y);
-    ctx.scale(1,stretch);
-
-    const radius=drop.radius;
-    const dome=ctx.createRadialGradient(
-      -radius*.15,-radius*.20,radius*.08,
-      0,0,radius
-    );
-    dome.addColorStop(0,'rgba(244,244,244,.94)');
-    dome.addColorStop(.48,'rgba(216,216,216,.89)');
-    dome.addColorStop(.80,'rgba(164,164,164,.78)');
-    dome.addColorStop(1,'rgba(128,128,128,0)');
-    ctx.fillStyle=dome;
-    ctx.beginPath();
-    ctx.arc(0,0,radius,0,TAU);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  wetGlassTexture.needsUpdate=true;
-}
-
-// 外の雨脚。
-// 近距離は短く太め、遠距離は細かく薄く描く。
-const exteriorRainRoot=group(outdoorRoot);
-const OUTDOOR_RAIN_COUNT=1650;
-const exteriorRainPositions=new Float32Array(OUTDOOR_RAIN_COUNT*6);
-const exteriorRainGeometry=new THREE.BufferGeometry();
-exteriorRainGeometry.setAttribute(
-  'position',
-  new THREE.BufferAttribute(exteriorRainPositions,3)
-);
-exteriorRainGeometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
-
-const exteriorRainMaterial=new THREE.LineBasicMaterial({
-  color:'#b7cbd1',
-  transparent:true,
-  opacity:.21,
-  depthWrite:false
-});
-const exteriorRainLines=new THREE.LineSegments(
-  exteriorRainGeometry,exteriorRainMaterial
-);
-exteriorRainLines.frustumCulled=false;
-exteriorRainRoot.add(exteriorRainLines);
-
-const exteriorRainDrops=[];
-for(let i=0;i<OUTDOOR_RAIN_COUNT;i++){
-  exteriorRainDrops.push({
-    x:-4.25-stormRandom()*11.2,
-    y:-1+stormRandom()*11,
-    z:(stormRandom()-.5)*30,
-    speed:7+stormRandom()*6,
-    length:.12+stormRandom()*.40,
-    phase:stormRandom()*TAU
-  });
-}
-
-// 距離別の雨霞。窓の直前を白い板で塞がず、
-// 建物の手前へ薄い層を分散して置く。
-const rainHazeTexture=canvasTexture((ctx,size)=>{
-  ctx.clearRect(0,0,size,size);
-  for(let i=0;i<500;i++){
-    const x=stormRandom()*size;
-    const y=stormRandom()*size;
-    const radius=40+stormRandom()*180;
-    const g=ctx.createRadialGradient(x,y,0,x,y,radius);
-    g.addColorStop(0,'rgba(216,231,234,.022)');
-    g.addColorStop(1,'rgba(216,231,234,0)');
-    ctx.fillStyle=g;
-    ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
-  }
-},512);
-
-const exteriorHazeLayers=[];
-for(const [index,x] of [-9.8,-15.2,-24.0,-36.0].entries()){
-  const hazeMaterial=new THREE.MeshBasicMaterial({
-    color:'#a9babd',
-    map:rainHazeTexture,
-    transparent:true,
-    opacity:.12+index*.06,
-    depthWrite:false,
-    side:THREE.DoubleSide,
-    fog:false
-  });
-  const haze=mesh(
-    new THREE.PlaneGeometry(55,25),
-    hazeMaterial,
-    exteriorRainRoot,x,7.3,0
-  );
-  haze.rotation.y=Math.PI/2;
-  haze.castShadow=false;
-  haze.receiveShadow=false;
-  exteriorHazeLayers.push({
-    mesh:haze,material:hazeMaterial,
-    baseOpacity:.12+index*.06,
-    phase:stormRandom()*TAU
-  });
-}
-
-// 屋外の地面に雨の衝突波紋を少量追加。
-// 街全体を高密度に描かず、窓から近い舗装部分に絞る。
-const exteriorSplashGeometry=new THREE.RingGeometry(.72,1,20);
-const exteriorSplashes=[];
-for(let i=0;i<48;i++){
-  const splashMaterial=new THREE.MeshBasicMaterial({
-    color:'#c2d5d8',
-    transparent:true,opacity:0,
-    side:THREE.DoubleSide,depthWrite:false
-  });
-  const splash=mesh(
-    exteriorSplashGeometry,
-    splashMaterial,
-    exteriorRainRoot
-  );
-  splash.rotation.x=-Math.PI/2;
-  splash.castShadow=false;
-  splash.receiveShadow=false;
-
-  const onSidewalk=i%3===0;
-  splash.position.set(
-    onSidewalk?-8.94+(stormRandom()-.5)*.75:
-      -11.7+(stormRandom()-.5)*3.8,
-    onSidewalk?outdoorGroundY+.107:outdoorGroundY+.019,
-    (stormRandom()-.5)*19
-  );
-  exteriorSplashes.push({
-    mesh:splash,material:splashMaterial,
-    phase:stormRandom(),
-    speed:.8+stormRandom()*1.5,
-    size:.07+stormRandom()*.10
-  });
-}
-
-// 水を含んだ路面の、鈍く広い反射。
-outdoorAsphalt.roughness=.35;
-outdoorAsphalt.metalness=.035;
-outdoorAsphalt.envMapIntensity=.40;
-outdoorAsphalt.needsUpdate=true;
-outdoorPaving.roughness=.49;
-outdoorPaving.envMapIntensity=.32;
-outdoorPaving.needsUpdate=true;
-
-// 風で、庭の葉の塊が少しずつ異なる位相で揺れる。
-const exteriorMovingLeaves=[];
-outdoorRoot.traverse(object=>{
-  if(!object.isMesh ||
-     !outdoorLeafMaterials.includes(object.material))return;
-  exteriorMovingLeaves.push({
-    mesh:object,
-    x:object.position.x,
-    z:object.position.z,
-    angle:object.rotation.z,
-    phase:stormRandom()*TAU
-  });
-});
-
-function updateExteriorStorm(dt){
-  // 周期をずらした複数の波。突然の乱数によるガタつきは作らない。
-  const wind=
-    Math.sin(time*.39)*.55+
-    Math.sin(time*.83+1.7)*.25+
-    Math.sin(time*.17+4.2)*.35;
-
-  const rainStrength=1+
-    Math.sin(time*.28+2.1)*.15+
-    Math.sin(time*.71)*.09+
-    Math.sin(time*.13+1.2)*.12;
-
-  const night=outdoorNightAmount;
-  exteriorRainMaterial.color.set(night?'#718999':'#bed0d4');
-  exteriorRainMaterial.opacity=lerp(.19,.11,night)*rainStrength;
-
-  for(let i=0;i<exteriorRainDrops.length;i++){
-    const drop=exteriorRainDrops[i];
-    const localWind=wind+
-      Math.sin(time*.63+drop.phase)*.17;
-
-    drop.y-=drop.speed*dt*(.88+rainStrength*.12);
-    drop.z+=localWind*dt*1.9;
-    drop.x+=Math.sin(time*.3+drop.phase)*dt*.13;
-
-    if(drop.y<outdoorGroundY){
-      drop.y=8.2+stormRandom()*2;
-      drop.x=-4.25-stormRandom()*11.2;
-      drop.z=(stormRandom()-.5)*30;
-    }
-    if(drop.z>15)drop.z-=30;
-    if(drop.z< -15)drop.z+=30;
-
-    const offset=i*6;
-    const slant=localWind*drop.length*.23;
-    exteriorRainPositions[offset]=drop.x;
-    exteriorRainPositions[offset+1]=drop.y;
-    exteriorRainPositions[offset+2]=drop.z;
-    exteriorRainPositions[offset+3]=drop.x+.012;
-    exteriorRainPositions[offset+4]=drop.y+drop.length;
-    exteriorRainPositions[offset+5]=drop.z-slant;
-  }
-  exteriorRainGeometry.attributes.position.needsUpdate=true;
-
-  for(const layer of exteriorHazeLayers){
-    layer.material.color.set(night?'#283b4b':'#a9babd');
-    layer.material.opacity=layer.baseOpacity*(
-      .87+Math.sin(time*.19+layer.phase)*.10+rainStrength*.08
-    );
-    layer.mesh.position.z=Math.sin(time*.07+layer.phase)*.8;
-  }
-
-  for(const splash of exteriorSplashes){
-    const age=(time*splash.speed+splash.phase)%1;
-    const size=.01+age*splash.size;
-    splash.mesh.scale.set(size,size,1);
-    splash.material.opacity=
-      (1-age)*(1-age)*lerp(.20,.045,night);
-  }
-
-  for(const leaf of exteriorMovingLeaves){
-    const flutter=
-      Math.sin(time*1.7+leaf.phase)*.006+
-      Math.sin(time*2.61+leaf.phase*1.3)*.003;
-    leaf.mesh.position.x=leaf.x+wind*.025+flutter;
-    leaf.mesh.position.z=leaf.z+
-      Math.sin(time*.73+leaf.phase)*.017;
-    leaf.mesh.rotation.z=leaf.angle+
-      wind*.022+flutter*.8;
-  }
-
-  // 水滴テクスチャは描画毎ではなく、約24回/秒で更新。
-  // 一度に進めすぎて水滴が飛ばないよう、小さなステップに分ける。
-  wetGlassFrameTime+=dt;
-  if(wetGlassFrameTime>=1/24){
-    const frameTime=Math.min(wetGlassFrameTime,.10);
-    wetGlassFrameTime=0;
-    const steps=Math.max(1,Math.ceil(frameTime/.025));
-    for(let i=0;i<steps;i++){
-      updateWindowDroplets(frameTime/steps,wind,rainStrength);
-    }
-  }
-
-  // 風雨でガラスの粗さもごくゆっくり変わる。
-  wetWindowMaterial.roughness=.225+
-    (rainStrength-1)*.035+
-    Math.sin(time*.16)*.009;
-
-  // 暗い部屋以外も、窓から入る光は曇天の青灰色へ。
-  // 暗い部屋の消灯処理と、エピローグの照明処理は維持する。
-  if(!epilogueActive && activeAnomaly!=='dark'){
-    windowLight.intensity=14.5+
-      Math.sin(time*.23)*.7+
-      Math.sin(time*.51+2)*.35;
-  }
-}
-
-windowLight.color.set('#b3c9d8');
-
-// 初回から水滴が見えるように、テクスチャと雨脚を一度更新する。
-updateWindowDroplets(1/24,0,1);
-updateExteriorStorm(0);
-
-// 新しい雨・雨霞も、廊下から見た部屋のプレビューへ反映する。
 scene.updateMatrixWorld(true);
 refreshRoomPreview();
 
